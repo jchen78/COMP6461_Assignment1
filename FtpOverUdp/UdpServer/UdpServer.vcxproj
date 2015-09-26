@@ -60,6 +60,12 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="FtpServer.h" />
+    <ClInclude Include="Thread.h" />
+  </ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="FtpServer.cpp" />
+    <ClCompile Include="Thread.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
