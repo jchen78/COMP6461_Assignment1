@@ -19,12 +19,12 @@
 using namespace std;
 
 /**
- * Constructor - TcpServer
+ * Constructor - FtpServer
  * Usage: Initialize the socket connection 
  *
  * @arg: void
  */
-TcpServer::TcpServer()
+FtpServer::FtpServer()
 {
 	WSADATA wsadata;
 	/* Initialize Windows Socket information */
@@ -73,12 +73,12 @@ TcpServer::TcpServer()
 }
 
 /**
- * Destructor - ~TcpServer
+ * Destructor - ~FtpServer
  * Usage: DeAllocate the allocated memory
  *
  * @arg: void
  */
-TcpServer::~TcpServer()
+FtpServer::~FtpServer()
 {
 	WSACleanup();
 }
@@ -89,7 +89,7 @@ TcpServer::~TcpServer()
  *
  * @arg: void
  */
-void TcpServer::start()
+void FtpServer::start()
 {
 	for (;;) /* Run forever */
 	{
@@ -105,19 +105,19 @@ void TcpServer::start()
 		}
 
         /* Create a Thread for new connection and run*/
-		TcpThread * pt=new TcpThread(clientSock);
+		FtpThread * pt=new FtpThread(clientSock);
 		pt->start();
 	}
 }
 
-/*-------------------------------TcpThread Class--------------------------------*/
+/*-------------------------------FtpThread Class--------------------------------*/
 /**
  * Function - ResolveName
  * Usage: Returns the binary, network byte ordered address
  *
  * @arg: char []
  */
-unsigned long TcpThread::ResolveName(char name[])
+unsigned long FtpThread::ResolveName(char name[])
 {
 	struct hostent *host;            /* Structure containing host information */
 
@@ -136,7 +136,7 @@ unsigned long TcpThread::ResolveName(char name[])
  *
  * @arg: int, Msg *
  */
-int TcpThread::msgRecv(int sock,Msg * msg_ptr)
+int FtpThread::msgRecv(int sock,Msg * msg_ptr)
 {
 	int rbytes,n;
 
@@ -169,7 +169,7 @@ int TcpThread::msgRecv(int sock,Msg * msg_ptr)
  *
  * @arg: int, Msg *
  */
-int TcpThread::msgSend(int sock,Msg * msg_ptr)
+int FtpThread::msgSend(int sock,Msg * msg_ptr)
 {
 	int n;
 	if((n=send(sock,(char *)msg_ptr,MSGHDRSIZE+msg_ptr->length,0))!=(MSGHDRSIZE+msg_ptr->length))
@@ -187,7 +187,7 @@ int TcpThread::msgSend(int sock,Msg * msg_ptr)
  *
  * @arg: char[]
  */
-void TcpThread::sendFileData(char fName[20])
+void FtpThread::sendFileData(char fName[20])
 {	
 	Msg sendMsg;
 	Resp responseMsg;
@@ -259,7 +259,7 @@ void TcpThread::sendFileData(char fName[20])
  *
  * @arg: void
  */
-void TcpThread::run()
+void FtpThread::run()
 {
 	Req *requestPtr; //Pointer to the Request Packet
 	Msg receiveMsg; //send_message and receive_message format
@@ -288,7 +288,7 @@ void TcpThread::run()
  */
 int main(void)
 {
-	TcpServer ts;
+	FtpServer ts;
 	/* Start the server and start listening to requests */
 	ts.start();
 

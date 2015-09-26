@@ -7,12 +7,12 @@
 using namespace std;
 
 /**
- * Constructor - TcpClient
+ * Constructor - FtpClient
  * Usage: Initialize the connection status 
  *
  * @arg: void
  */
-TcpClient::TcpClient()
+FtpClient::FtpClient()
 {
 	connectionStatus = true;
 }
@@ -22,7 +22,7 @@ TcpClient::TcpClient()
  *
  * @arg: void
  */
-void TcpClient::run()
+void FtpClient::run()
 {	
 	/* Socket Creation */
 	if ((clientSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) 
@@ -57,7 +57,7 @@ void TcpClient::run()
  *
  * @arg: string
  */
-unsigned long TcpClient::ResolveName(string name)
+unsigned long FtpClient::ResolveName(string name)
 {
 	struct hostent *host;            /* Structure containing host information */
 
@@ -77,7 +77,7 @@ unsigned long TcpClient::ResolveName(string name)
  *
  * @arg: int, Msg *
  */
-int TcpClient::msgSend(int clientSocket,Msg * msg_ptr)
+int FtpClient::msgSend(int clientSocket,Msg * msg_ptr)
 {
 	int len;
 	if((len=send(clientSocket,(char *)msg_ptr,MSGHDRSIZE+msg_ptr->length,0))!=(MSGHDRSIZE+msg_ptr->length))
@@ -96,7 +96,7 @@ int TcpClient::msgSend(int clientSocket,Msg * msg_ptr)
  *
  * @arg: void
  */
-void TcpClient::getOperation()
+void FtpClient::getOperation()
 { 
 	/* Socket creation */
 	if ((clientSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) //create the socket
@@ -167,7 +167,7 @@ void TcpClient::getOperation()
  *
  * @arg: void
  */
-void TcpClient::showMenu()
+void FtpClient::showMenu()
 {
 	int optionVal;
 	cout << "1 : GET " << endl;
@@ -206,7 +206,7 @@ void TcpClient::showMenu()
  *
  * @arg: void
  */
-void TcpClient::startClient()
+void FtpClient::startClient()
 {
 	/* Initialize WinSocket */
 	if (WSAStartup(0x0202,&wsaData)!=0)
@@ -228,12 +228,12 @@ void TcpClient::startClient()
 }
 
 /**
- * Destructor - ~TcpClient
+ * Destructor - ~FtpClient
  * Usage: DeAllocate the allocated memory
  *
  * @arg: void
  */
-TcpClient::~TcpClient()
+FtpClient::~FtpClient()
 {
 	/* When done uninstall winsock.dll (WSACleanup()) and return; */
 	WSACleanup();
@@ -247,7 +247,7 @@ TcpClient::~TcpClient()
  */
 int main(int argc, char *argv[])
 {
-	TcpClient * tc=new TcpClient();
+	FtpClient * tc=new FtpClient();
 	tc->startClient();
 	while(1)
 	{

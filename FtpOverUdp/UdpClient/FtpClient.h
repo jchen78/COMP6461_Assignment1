@@ -49,8 +49,8 @@ typedef struct
 	char dataBuffer[BUFFER_LENGTH];
 } Msg; 
 
-/* TcpClient Class */
-class TcpClient
+/* FtpClient Class */
+class FtpClient
 {
 	private:
 		int clientSock;					/* Socket descriptor */
@@ -69,12 +69,12 @@ class TcpClient
 		bool connectionStatus;			/* Variable to specify the status of the socket connection */
 	
 	public:
-		TcpClient(); 
+		FtpClient(); 
 		void run();						/* Invokes the appropriate function based on selected option */
 		void getOperation();			/* Retrieves the file from Server */
 		void showMenu();				/* Displays the list of available options for User */
 		void startClient();				/* Starts the client process */
 		int msgSend(int ,Msg * );		/* Sends the packed message to server */
 		unsigned long ResolveName(string name);	/* Resolve the specified host name */
-		~TcpClient();		
+		~FtpClient();		
 };

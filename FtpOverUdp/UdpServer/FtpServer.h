@@ -41,8 +41,8 @@ typedef struct
 	char buffer[BUFFER_LENGTH];
 } Msg;
 
-/* TcpServer Class */
-class TcpServer
+/* FtpServer Class */
+class FtpServer
 {
 	private:
 		int serverSock,clientSock;				/* Socket descriptor for server and client*/
@@ -53,19 +53,19 @@ class TcpServer
 		char serverName[HOSTNAME_LENGTH];		/* Server Name */
 
 	public:
-		TcpServer();
-		~TcpServer();
-		void start();							/* Starts the TcpServer */
+		FtpServer();
+		~FtpServer();
+		void start();							/* Starts the FtpServer */
 };
 
-/* TcpThread Class */
-class TcpThread :public Thread
+/* FtpThread Class */
+class FtpThread :public Thread
 {
 	private:
 		int serverSocket;						/* ServerSocket */
 
 	public:
-		TcpThread(int clientsocket):serverSocket(clientsocket){}
+		FtpThread(int clientsocket):serverSocket(clientsocket){}
 		virtual void run();						/* Starts the thread for every client request */
 		int msgRecv(int ,Msg * );				/* Receive the incoming requests */
 		int msgSend(int ,Msg * );				/* Send the response */
