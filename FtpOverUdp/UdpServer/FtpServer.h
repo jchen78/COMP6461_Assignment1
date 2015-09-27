@@ -63,19 +63,21 @@ class FtpServer
 class FtpThread :public Thread
 {
 	private:
-		int serverPort;							/*  */
+		// Fields
 		int serverSock;							/* ServerSocket */
 		struct sockaddr_in addr;				/* Address */
+		struct sockaddr_in clientAddr;			/* Client address */
 		int addrLength;							/* Length of addr field */
-		char request[1024];						/* Request message */
-		int requestLength;						/* Request length */
+		Msg* reqHdr;							/*  */
+		
+		// Methods
+		Msg* getMsg();							/*  */
+		int msgSend(int ,Msg * );				/* Send the response */
 
 	public:
-		FtpThread(int clientSocket, struct sockaddr_in clientAddr, int nextPort):serverSock(clientSocket), addr(clientAddr), serverPort(nextPort) { }
+		FtpThread(int, struct sockaddr_in);		/* Constructs the worker thread with sufficient data to receive a new request header */
 		void listen();							/* Gets the message */
 		virtual void run();						/* Starts the thread for every client request */
-		int msgRecv(int ,Msg * );				/* Receive the incoming requests */
-		int msgSend(int ,Msg * );				/* Send the response */
 		void sendFileData(char []);				/* Sends the contents of the file (get)*/
 };
 

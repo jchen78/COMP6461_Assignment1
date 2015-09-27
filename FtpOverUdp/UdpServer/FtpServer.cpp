@@ -88,82 +88,66 @@ void FtpServer::start()
 {
 	for (;;) /* Run forever */
 	{
-		FtpThread * pt = new FtpThread(serverSock, ServerAddr, nextServerSock++);
+		FtpThread * pt = new FtpThread(serverSock, ServerAddr);
 		
 		// Wait for a request
 		pt->listen();
 
 		// Once request has arrived, start new thread so that server may receive another request
 		pt-> start();
-
-		/* Set the size of the result-value parameter */
-		clientLen = sizeof(ServerAddr);
-
-		// Based on: https://msdn.microsoft.com/en-us/library/windows/desktop/ms740120(v=vs.85).aspx
-		char requestBuffer[1024];
-		int reqSize;
-		if ((reqSize = recvfrom(serverSock, requestBuffer, 1024, 0, (SOCKADDR *)& ServerAddr, &clientLen)) == SOCKET_ERROR)
-			exit(1);
-		
-  //      /* Create a Thread for new request and run*/
-		//FtpThread * pt=new FtpThread(requestBuffer, reqSize);
-		//pt->start();
-		int result = sendto(serverSock, requestBuffer, reqSize, 0, (SOCKADDR *)& ServerAddr, clientLen);
-		cout << result << endl;
 	}
 }
 
 /*-------------------------------FtpThread Class--------------------------------*/
+/**
+ * Constructor - FtpThread
+ * Usage: Provide sufficient data for the worker thread to receive new requests via the listen() method/
+ *
+ * @arg: int, struct sockaddr_in
+ */
+FtpThread::FtpThread(int serverSocket, struct sockaddr_in serverAddress)
+{
+	serverSock = serverSocket;
+	addr = serverAddress;
+	strcpy(addr.sin_zero, serverAddress.sin_zero);
+	reqHdr = NULL;
+}
 
 /**
  * Function - listen
- * Usage: Blocks until incoming message is captured
+ * Usage: Blocks until incoming request message is captured
  *
  * @arg: void
  */
 void FtpThread::listen()
 {
-	memset(request, '\0', sizeof(request));
-
 	addrLength = sizeof(addr);
-	if ((requestLength = recvfrom(serverSock, request, 1024, 0, (SOCKADDR *)&addr, &addrLength)) == SOCKET_ERROR)
-	{
-		cerr << "recvfrom(...) failed when listening" << endl;
-		exit(1);
-	}
+	reqHdr = getMsg();
 }
 
 /**
- * Function - msgRecv
- * Usage: Returns the length of bytes in msg_ptr->buffer,which have been recevied successfully
+ * Function - getMsg
+ * Usage: Blocks until the next incoming packet is completely received; returns the packet formatted as a message.
  *
- * @arg: int, Msg *
+ * @arg: void
  */
-int FtpThread::msgRecv(int sock,Msg * msg_ptr)
+Msg* FtpThread::getMsg()
 {
-	int rbytes,n;
+	char buffer[512];
+	int bufferLength;
 
 	/* Check the received Message Header */
-	for(rbytes=0;rbytes<MSGHDRSIZE;rbytes+=n)
+	if ((bufferLength = recvfrom(serverSock, buffer, BUFFER_LENGTH, 0, (SOCKADDR *)&addr, &addrLength)) == SOCKET_ERROR)
 	{
-		if((n=recv(sock,(char *)msg_ptr+rbytes,MSGHDRSIZE-rbytes,0))<=0)
-		{
-			std::cerr << "Received MSGHDR Error" << endl;
-			return (-1);
-		}
+		cerr << "recvfrom(...) failed when getting message" << endl;
+		exit(1);
 	}
 
-	/* Check the received Message Buffer */
-	for(rbytes=0;rbytes<msg_ptr->length;rbytes+=n)
-	{
-		if((n=recv(sock,(char *)msg_ptr->buffer+rbytes,msg_ptr->length-rbytes,0))<=0)
-		{
-			std::cerr << "Recevier Buffer Error" << endl;
-			return (-1);
-		}
-	}
-	/*  Return the length of bytes in msg_ptr->buffer,which have been recevied successfully */
-	return msg_ptr->length;
+	// must destruct after use!
+	Msg* msg = new Msg();
+	memcpy(msg, buffer, MSGHDRSIZE);
+	memcpy(msg->buffer, buffer + MSGHDRSIZE, msg->length);
+	return msg;
 }
 
 /**
@@ -175,12 +159,12 @@ int FtpThread::msgRecv(int sock,Msg * msg_ptr)
 int FtpThread::msgSend(int sock,Msg * msg_ptr)
 {
 	int n;
-	if((n=send(sock,(char *)msg_ptr,MSGHDRSIZE+msg_ptr->length,0))!=(MSGHDRSIZE+msg_ptr->length))
-	{
+	int expectedMsgLen = MSGHDRSIZE + msg_ptr->length;
+	if ((n = sendto(serverSock, (char *)msg_ptr, expectedMsgLen, 0, (SOCKADDR *)&addr, addrLength)) != expectedMsgLen) {
 		std::cerr << "Send MSGHDRSIZE+length Error " << endl;
 		return(-1);
 	}
-	/* Return the length of bytes in msg_ptr->buffer,which have been sent out successfully */
+
 	return (n-MSGHDRSIZE);
 }
 
@@ -228,13 +212,17 @@ void FtpThread::sendFileData(char fName[20])
 		fileToRead.open(fName, ios::in | ios::binary);
 		if(fileToRead.is_open()) 
 		{
-			while(!fileToRead.eof())
+			while (!fileToRead.eof())
 			{
+				// Initialize sendMsg
 				memset(sendMsg.buffer,'\0',BUFFER_LENGTH);
+
 				/* Read the contents of file and write into the buffer for transmission */
-				fileToRead.read (sendMsg.buffer, BUFFER_LENGTH);
+				fileToRead.read(sendMsg.buffer, BUFFER_LENGTH);
+				sendMsg.length = fileToRead.gcount();
+
 				/* Transfer the content to requested client */
-				if((numBytesSent = send(serverSock,sendMsg.buffer,BUFFER_LENGTH,0))==SOCKET_ERROR)
+				if((numBytesSent = msgSend(serverSock, &sendMsg)) == SOCKET_ERROR)
 				{
 					cout << "Socket Error occured while sending data " << endl;
 					/* Close the connection and unlock the mutex if there is a Socket Error */
@@ -264,23 +252,28 @@ void FtpThread::sendFileData(char fName[20])
  */
 void FtpThread::run()
 {
-	Req *requestPtr; //Pointer to the Request Packet
-	Msg receiveMsg; //send_message and receive_message format
+	
 	/*Start receiving the request */
-	if(msgRecv(serverSock,&receiveMsg)!=receiveMsg.length)
+	if (reqHdr == NULL)
 	{
 		cerr << "Receive Req error,exit " << endl;
 		return;
 	}
-	requestPtr = (Req *)receiveMsg.buffer;
+	
 	/* Check the type of operation and Construct the response and send to Client */
-	if(receiveMsg.type==REQ_GET)
+	if(reqHdr->type==REQ_GET)
 	{
+		Req *requestPtr = (Req *)reqHdr->buffer; //Pointer to the Request Packet
 		cout <<"User " << requestPtr->hostname <<" requested file "<< requestPtr->filename << " to be sent" << endl;
+		
 		/* Transfer the requested file to Client */
 		sendFileData(requestPtr->filename);
 	}
-
+	else
+	{
+		cerr << "Invalid request header, exit" << endl;
+		return;
+	}
 }
 
 /**
