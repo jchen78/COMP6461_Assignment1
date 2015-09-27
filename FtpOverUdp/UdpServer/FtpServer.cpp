@@ -11,6 +11,7 @@
 #include <sys/stat.h>
 #include <cstdio>
 #include <string>
+#include <vector>
 #include <fstream>
 #include <process.h>
 #include "Thread.h"
@@ -26,6 +27,7 @@ using namespace std;
  */
 FtpServer::FtpServer()
 {
+	nextServerSock = REQUEST_PORT + 1;
 	WSADATA wsadata;
 	/* Initialize Windows Socket information */
 	if (WSAStartup(0x0202,&wsadata)!=0)
@@ -44,7 +46,7 @@ FtpServer::FtpServer()
 	cout << "Server: " << serverName << " waiting to be contacted for get/put request..." << endl;
 
 	/* Socket Creation */
-	if ((serverSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0)
+	if ((serverSock = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
 	{
 		std::cerr << "Socket Creation Error,exit" << endl;
 		exit(1);
@@ -54,20 +56,13 @@ FtpServer::FtpServer()
 	ServerPort=REQUEST_PORT;
 	memset(&ServerAddr, 0, sizeof(ServerAddr));      /* Zero out structure */
 	ServerAddr.sin_family = AF_INET;                 /* Internet address family */
-	ServerAddr.sin_addr.s_addr = htonl(INADDR_ANY);  /* Any incoming interface */
+	ServerAddr.sin_addr.s_addr = INADDR_ANY;  /* Any incoming interface */
 	ServerAddr.sin_port = htons(ServerPort);         /* Local port */
 
 	/* Binding the server socket to the Port Number */
     if (::bind(serverSock, (struct sockaddr *) &ServerAddr, sizeof(ServerAddr)) < 0)
 	{
 		cerr << "Socket Binding Error,exit" << endl;
-		exit(1);
-	}
-
-	//Successfull bind, now listen for Server requests.
-	if (listen(serverSock, MAXPENDING) < 0)
-	{
-		cerr << "Socket Listening Error,exit" << endl;
 		exit(1);
 	}
 }
@@ -93,41 +88,49 @@ void FtpServer::start()
 {
 	for (;;) /* Run forever */
 	{
+		FtpThread * pt = new FtpThread(serverSock, ServerAddr, nextServerSock++);
+		
+		// Wait for a request
+		pt->listen();
+
+		// Once request has arrived, start new thread so that server may receive another request
+		pt-> start();
+
 		/* Set the size of the result-value parameter */
 		clientLen = sizeof(ServerAddr);
 
-		/* Accept the connection from client */
-		if ((clientSock = accept(serverSock, (struct sockaddr *) &ClientAddr,
-			&clientLen)) < 0)
-		{
-			cerr << "Connection Accept Failed ,exit" << endl;
+		// Based on: https://msdn.microsoft.com/en-us/library/windows/desktop/ms740120(v=vs.85).aspx
+		char requestBuffer[1024];
+		int reqSize;
+		if ((reqSize = recvfrom(serverSock, requestBuffer, 1024, 0, (SOCKADDR *)& ServerAddr, &clientLen)) == SOCKET_ERROR)
 			exit(1);
-		}
-
-        /* Create a Thread for new connection and run*/
-		FtpThread * pt=new FtpThread(clientSock);
-		pt->start();
+		
+  //      /* Create a Thread for new request and run*/
+		//FtpThread * pt=new FtpThread(requestBuffer, reqSize);
+		//pt->start();
+		int result = sendto(serverSock, requestBuffer, reqSize, 0, (SOCKADDR *)& ServerAddr, clientLen);
+		cout << result << endl;
 	}
 }
 
 /*-------------------------------FtpThread Class--------------------------------*/
+
 /**
- * Function - ResolveName
- * Usage: Returns the binary, network byte ordered address
+ * Function - listen
+ * Usage: Blocks until incoming message is captured
  *
- * @arg: char []
+ * @arg: void
  */
-unsigned long FtpThread::ResolveName(char name[])
+void FtpThread::listen()
 {
-	struct hostent *host;            /* Structure containing host information */
+	memset(request, '\0', sizeof(request));
 
-	if ((host = gethostbyname(name)) == NULL)
+	addrLength = sizeof(addr);
+	if ((requestLength = recvfrom(serverSock, request, 1024, 0, (SOCKADDR *)&addr, &addrLength)) == SOCKET_ERROR)
 	{
-		std::cerr << "gethostbyname() failed" << endl;
+		cerr << "recvfrom(...) failed when listening" << endl;
+		exit(1);
 	}
-
-	/* Return the binary, network byte ordered address */
-	return *((unsigned long *) host->h_addr_list[0]);
 }
 
 /**
@@ -206,11 +209,11 @@ void FtpThread::sendFileData(char fName[20])
 		memset(sendMsg.buffer,'\0',BUFFER_LENGTH);
 		memcpy(sendMsg.buffer,&responseMsg,sizeof(responseMsg));
 		/* Send the contents of file recursively */
-		if((numBytesSent = send(serverSocket,sendMsg.buffer,sizeof(responseMsg),0))==SOCKET_ERROR)
+		if((numBytesSent = send(serverSock,sendMsg.buffer,sizeof(responseMsg),0))==SOCKET_ERROR)
 		{
 			cout << "Socket Error occured while sending data " << endl;
 			/* Close the connection and unlock the mutex if there is a Socket Error */
-			closesocket(serverSocket);
+			closesocket(serverSock);
 			
 			return;
 		}
@@ -231,11 +234,11 @@ void FtpThread::sendFileData(char fName[20])
 				/* Read the contents of file and write into the buffer for transmission */
 				fileToRead.read (sendMsg.buffer, BUFFER_LENGTH);
 				/* Transfer the content to requested client */
-				if((numBytesSent = send(serverSocket,sendMsg.buffer,BUFFER_LENGTH,0))==SOCKET_ERROR)
+				if((numBytesSent = send(serverSock,sendMsg.buffer,BUFFER_LENGTH,0))==SOCKET_ERROR)
 				{
 					cout << "Socket Error occured while sending data " << endl;
 					/* Close the connection and unlock the mutex if there is a Socket Error */
-					closesocket(serverSocket);
+					closesocket(serverSock);
 					
 					return;
 				}
@@ -250,7 +253,7 @@ void FtpThread::sendFileData(char fName[20])
 		fileToRead.close();
 	}
 	/* Close the connection and unlock the Mutex after successful transfer */
-	closesocket(serverSocket);
+	closesocket(serverSock);
 }
 
 /**
@@ -264,7 +267,7 @@ void FtpThread::run()
 	Req *requestPtr; //Pointer to the Request Packet
 	Msg receiveMsg; //send_message and receive_message format
 	/*Start receiving the request */
-	if(msgRecv(serverSocket,&receiveMsg)!=receiveMsg.length)
+	if(msgRecv(serverSock,&receiveMsg)!=receiveMsg.length)
 	{
 		cerr << "Receive Req error,exit " << endl;
 		return;
@@ -294,5 +297,3 @@ int main(void)
 
 	return 0;
 }
-
-

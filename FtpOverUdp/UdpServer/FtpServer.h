@@ -46,6 +46,7 @@ class FtpServer
 {
 	private:
 		int serverSock,clientSock;				/* Socket descriptor for server and client*/
+		int nextServerSock;					/* Socket for next worker thread */
 		struct sockaddr_in ClientAddr;			/* Client address */
 		struct sockaddr_in ServerAddr;			/* Server address */
 		unsigned short ServerPort;				/* Server port */
@@ -62,15 +63,20 @@ class FtpServer
 class FtpThread :public Thread
 {
 	private:
-		int serverSocket;						/* ServerSocket */
+		int serverPort;							/*  */
+		int serverSock;							/* ServerSocket */
+		struct sockaddr_in addr;				/* Address */
+		int addrLength;							/* Length of addr field */
+		char request[1024];						/* Request message */
+		int requestLength;						/* Request length */
 
 	public:
-		FtpThread(int clientsocket):serverSocket(clientsocket){}
+		FtpThread(int clientSocket, struct sockaddr_in clientAddr, int nextPort):serverSock(clientSocket), addr(clientAddr), serverPort(nextPort) { }
+		void listen();							/* Gets the message */
 		virtual void run();						/* Starts the thread for every client request */
 		int msgRecv(int ,Msg * );				/* Receive the incoming requests */
 		int msgSend(int ,Msg * );				/* Send the response */
 		void sendFileData(char []);				/* Sends the contents of the file (get)*/
-		unsigned long ResolveName(char name[]);	/* Resolves the host name */
 };
 
 #endif
