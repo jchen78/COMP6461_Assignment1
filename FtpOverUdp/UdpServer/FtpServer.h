@@ -17,7 +17,8 @@
 /* Type of Messages */
 typedef enum
 {
-	REQ_GET=1
+	REQ_GET = 1,
+	RESP = 3
 } Type;
 
 /* Request message structure */
@@ -46,7 +47,7 @@ class FtpServer
 {
 	private:
 		int serverSock,clientSock;				/* Socket descriptor for server and client*/
-		int nextServerSock;					/* Socket for next worker thread */
+		int nextServerSock;						/* Socket for next worker thread */
 		struct sockaddr_in ClientAddr;			/* Client address */
 		struct sockaddr_in ServerAddr;			/* Server address */
 		unsigned short ServerPort;				/* Server port */
@@ -60,7 +61,7 @@ class FtpServer
 };
 
 /* FtpThread Class */
-class FtpThread :public Thread
+class FtpThread : public Thread
 {
 	private:
 		// Fields
@@ -68,11 +69,11 @@ class FtpThread :public Thread
 		struct sockaddr_in addr;				/* Address */
 		struct sockaddr_in clientAddr;			/* Client address */
 		int addrLength;							/* Length of addr field */
-		Msg* reqHdr;							/*  */
+		Msg* reqHdr;							/* Thread-initiating request */
 		
 		// Methods
-		Msg* getMsg();							/*  */
-		int msgSend(int ,Msg * );				/* Send the response */
+		Msg* msgGet();							/* Gets a request message */
+		int msgSend(int , Msg*);				/* Send the response */
 
 	public:
 		FtpThread(int, struct sockaddr_in);		/* Constructs the worker thread with sufficient data to receive a new request header */

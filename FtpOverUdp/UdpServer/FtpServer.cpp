@@ -122,7 +122,7 @@ FtpThread::FtpThread(int serverSocket, struct sockaddr_in serverAddress)
 void FtpThread::listen()
 {
 	addrLength = sizeof(addr);
-	reqHdr = getMsg();
+	reqHdr = msgGet();
 }
 
 /**
@@ -131,7 +131,7 @@ void FtpThread::listen()
  *
  * @arg: void
  */
-Msg* FtpThread::getMsg()
+Msg* FtpThread::msgGet()
 {
 	char buffer[512];
 	int bufferLength;
@@ -177,14 +177,16 @@ int FtpThread::msgSend(int sock,Msg * msg_ptr)
 void FtpThread::sendFileData(char fName[20])
 {	
 	Msg sendMsg;
+	sendMsg.type = RESP;
 	Resp responseMsg;
 	int numBytesSent = 0;
+
 	ifstream fileToRead;
 	int result;
 	struct _stat stat_buf;
+	
+	
 	/* Lock the code section */
-
-
 	memset(responseMsg.response,0,sizeof(responseMsg));
 	/* Check the file status and pack the response */
 	if((result = _stat(fName,&stat_buf))!=0)
@@ -192,11 +194,12 @@ void FtpThread::sendFileData(char fName[20])
 		strcpy(responseMsg.response,"No such file");
 		memset(sendMsg.buffer,'\0',BUFFER_LENGTH);
 		memcpy(sendMsg.buffer,&responseMsg,sizeof(responseMsg));
+		sendMsg.length = 13;
+
 		/* Send the contents of file recursively */
-		if((numBytesSent = send(serverSock,sendMsg.buffer,sizeof(responseMsg),0))==SOCKET_ERROR)
+		if((numBytesSent = msgSend(serverSock, &sendMsg))==SOCKET_ERROR)
 		{
 			cout << "Socket Error occured while sending data " << endl;
-			/* Close the connection and unlock the mutex if there is a Socket Error */
 			closesocket(serverSock);
 			
 			return;
