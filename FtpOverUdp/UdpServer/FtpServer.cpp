@@ -88,10 +88,10 @@ void FtpServer::start()
 {
 	for (;;) /* Run forever */
 	{
-		FtpThread * pt = new FtpThread(serverSock, ServerAddr);
+		FtpThread * pt = new FtpThread();
 		
 		// Wait for a request
-		pt->listen();
+		pt->listen(serverSock, ServerAddr);
 
 		// Once request has arrived, start new thread so that server may receive another request
 		pt-> start();
@@ -100,29 +100,18 @@ void FtpServer::start()
 
 /*-------------------------------FtpThread Class--------------------------------*/
 /**
- * Constructor - FtpThread
- * Usage: Provide sufficient data for the worker thread to receive new requests via the listen() method/
- *
- * @arg: int, struct sockaddr_in
- */
-FtpThread::FtpThread(int serverSocket, struct sockaddr_in serverAddress)
-{
-	serverSock = serverSocket;
-	addr = serverAddress;
-	strcpy(addr.sin_zero, serverAddress.sin_zero);
-	reqHdr = NULL;
-}
-
-/**
  * Function - listen
  * Usage: Blocks until incoming request message is captured
  *
  * @arg: void
  */
-void FtpThread::listen()
+void FtpThread::listen(int sock, struct sockaddr_in initialPort)
 {
+	serverSock = sock;
+	addr = initialPort;
+	memcpy(addr.sin_zero, initialPort.sin_zero, 8);
 	addrLength = sizeof(addr);
-	reqHdr = msgGet();
+	reqHdr = msgGet(sock, (SOCKADDR *)&addr, &addrLength);
 }
 
 /**
@@ -131,13 +120,13 @@ void FtpThread::listen()
  *
  * @arg: void
  */
-Msg* FtpThread::msgGet()
+Msg* FtpThread::msgGet(SOCKET sock, SOCKADDR* sockAddr, int* addrLen)
 {
 	char buffer[512];
 	int bufferLength;
 
 	/* Check the received Message Header */
-	if ((bufferLength = recvfrom(serverSock, buffer, BUFFER_LENGTH, 0, (SOCKADDR *)&addr, &addrLength)) == SOCKET_ERROR)
+	if ((bufferLength = recvfrom(sock, buffer, BUFFER_LENGTH, 0, sockAddr, addrLen)) == SOCKET_ERROR)
 	{
 		cerr << "recvfrom(...) failed when getting message" << endl;
 		exit(1);

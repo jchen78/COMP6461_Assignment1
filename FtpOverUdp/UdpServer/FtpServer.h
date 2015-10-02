@@ -65,21 +65,21 @@ class FtpThread : public Thread
 {
 	private:
 		// Fields
-		int serverSock;							/* ServerSocket */
-		struct sockaddr_in addr;				/* Address */
-		struct sockaddr_in clientAddr;			/* Client address */
-		int addrLength;							/* Length of addr field */
-		Msg* reqHdr;							/* Thread-initiating request */
+		int serverSock;									/* ServerSocket */
+		struct sockaddr_in addr;						/* Address */
+		struct sockaddr_in* clientAddr;					/* Client address */
+		int addrLength;									/* Length of addr field */
+		Msg* reqHdr;									/* Thread-initiating request */
 		
 		// Methods
-		Msg* msgGet();							/* Gets a request message */
-		int msgSend(int , Msg*);				/* Send the response */
+		Msg* msgGet(SOCKET, SOCKADDR*, int*);			/* Gets a request message */
+		int msgSend(int , Msg*);						/* Send the response */
 
 	public:
-		FtpThread(int, struct sockaddr_in);		/* Constructs the worker thread with sufficient data to receive a new request header */
-		void listen();							/* Gets the message */
-		virtual void run();						/* Starts the thread for every client request */
-		void sendFileData(char []);				/* Sends the contents of the file (get)*/
+		FtpThread() { reqHdr = NULL; }					/* Constructs the worker thread with sufficient data to receive a new request header */
+		void listen(int, struct sockaddr_in);			/* Receives the handshake */
+		virtual void run();								/* Starts the thread for every client request */
+		void sendFileData(char []);						/* Sends the contents of the file (get)*/
 };
 
 #endif
