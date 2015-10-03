@@ -92,7 +92,8 @@ class FtpThread : public Thread
 		struct sockaddr_in clientAddr;					/* Client address */
 		int addrLength;									/* Length of addr field */
 		int currentSequenceNumber;						/* The sequence number (updated AFTER processing each request, as required) */
-		std::queue<char*> payloadData;	/* The data to be sent. Until ACK is received, the previously sent chunk is kept at the top. */
+		std::string filesDirectory;						/* */
+		std::queue<char*> payloadData;					/* The data to be sent. Until ACK is received, the previously sent chunk is kept at the top. */
 		Msg* curRqt;									/* The latest received request */
 		
 		// Methods
@@ -101,13 +102,14 @@ class FtpThread : public Thread
 		int msgSend(int , Msg*);						/* Send the response */
 		bool isHandshakeCompleted();					/* Determines whether the final handshake message is addressed to the correct server */
 		bool tryLoadFile();								/* Retrieves the file in curRqt, if possible. Returns true if the file is found & loaded, or false otherwise. */
+		void loadDirectoryContents();					/*  */
 
 		// Message creation
 		Msg* createServerHandshake();					/* Send 2nd handshake */
 		Msg* getNextChunk();							/* Wraps the current payload inside a Msg object */
 		Msg* getErrorMessage(const char*);				/* Wraps an error message inside a Msg object */
 	public:
-		FtpThread(int serverPort):inPort(serverPort) { curRqt = NULL; serverIdentifier = rand(); currentState = Initialized; }
+		FtpThread(int serverPort):inPort(serverPort) { curRqt = NULL; serverIdentifier = rand(); filesDirectory = "files"; currentState = Initialized; }
 		void listen(int, struct sockaddr_in);			/* Receives the handshake */
 		virtual void run();								/* Starts the thread for every client request */
 };

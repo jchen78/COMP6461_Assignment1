@@ -218,11 +218,14 @@ void FtpThread::handleCurrentMessage()
 			currentState = ReceivingRequest;
 	} else if (currentState == ReceivingRequest && curRqt->type == REQ_GET) {
 		reply = tryLoadFile() ? getNextChunk() : getErrorMessage("No such file.");
+	} else if (currentState == ReceivingRequest && curRqt->type == REQ_LIST) {
+		loadDirectoryContents();
+		reply = getNextChunk();
 	} else if (currentState == Sending && curRqt->type == PUT) {
 		if (curRqt->sequenceNumber == currentSequenceNumber && !payloadData.empty()) {
 			// Iterate
 			currentSequenceNumber = (currentSequenceNumber + 1) % SEQUENCE_RANGE;
-			payloadData.pop();
+			payloadData.pop(); // TODO: Manage memory?
 		}
 
 		reply = getNextChunk();
@@ -259,7 +262,7 @@ bool FtpThread::isHandshakeCompleted()
 bool FtpThread::tryLoadFile()
 {
 	ifstream fileToRead;
-	fileToRead.open(curRqt->buffer);
+	fileToRead.open(string(filesDirectory).append(curRqt->buffer));
 	char* currentBuffer = NULL;
 	if (fileToRead.is_open()) {
 		while (!fileToRead.eof()) {
@@ -275,6 +278,42 @@ bool FtpThread::tryLoadFile()
 	}
 
 	return false;
+}
+
+void FtpThread::loadDirectoryContents()
+{
+	// Empties out any data which may be remaining in the queue.
+	queue<char*>().swap(payloadData);
+
+	// Code adapted from https://msdn.microsoft.com/en-us/library/windows/desktop/aa365200(v=vs.85).aspx
+	// Removed most of the error-checking --it is the responsibility of the person setting up the server to ensure that directories and files are set up correctly
+    WIN32_FIND_DATA ffd;
+    TCHAR szDir[MAX_PATH];
+    size_t length_of_arg;
+    HANDLE hFind = INVALID_HANDLE_VALUE;
+
+	char *buffer = new char[BUFFER_LENGTH];
+	int currIndex = 0;
+	memset(buffer, '\0', BUFFER_LENGTH);
+	hFind = FindFirstFile("files\\*", &ffd);
+    do
+    {
+        if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+        {
+			for (int i = 0; i < sizeof(ffd.cFileName); i++, currIndex++) {
+				if (currIndex == BUFFER_LENGTH) {
+					payloadData.push(buffer);
+					buffer = new char[BUFFER_LENGTH];
+					currIndex = 0;
+				}
+
+				buffer[currIndex] = ffd.cFileName[i];
+			}
+        }
+    }
+    while (FindNextFile(hFind, &ffd) != 0);
+
+	payloadData.push(buffer);
 }
 
 Msg* FtpThread::getNextChunk()
