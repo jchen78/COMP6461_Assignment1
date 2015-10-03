@@ -17,9 +17,23 @@
 /* Type of Messages */
 typedef enum
 {
-	REQ_GET = 1,
-	RESP = 3
+	HANDSHAKE = 1,
+	COMPLETE_HANDSHAKE = 2,
+	REQ_LIST = 5,
+	REQ_GET = 6,
+	RESP = 10,
+	ACK = 15,
+	TERMINATE = 20
 } Type;
+
+typedef enum
+{
+	Initialized,
+	HandshakeStarted,
+	ReceivingRequest,
+	Sending,
+	Terminated
+} ThreadState;
 
 /* Request message structure */
 typedef struct
@@ -46,11 +60,11 @@ typedef struct
 class FtpServer
 {
 	private:
-		int serverSock,clientSock;				/* Socket descriptor for server and client*/
-		int nextServerSock;						/* Socket for next worker thread */
+		int serverSock;							/* Socket descriptor for server and client*/
 		struct sockaddr_in ClientAddr;			/* Client address */
 		struct sockaddr_in ServerAddr;			/* Server address */
 		unsigned short ServerPort;				/* Server port */
+		unsigned short nextServerPort;			/* Socket for next worker thread */
 		int clientLen;							/* Length of Server address data structure */
 		char serverName[HOSTNAME_LENGTH];		/* Server Name */
 
@@ -65,18 +79,25 @@ class FtpThread : public Thread
 {
 	private:
 		// Fields
-		int serverSock;									/* ServerSocket */
+		int serverIdentifier;							/*  */
+		int inPort;										/* Initial, server-wide socket */
+		ThreadState currentState;						/* Indicates the current state of the server, as defined by the requests received */
+		SOCKET thrdSock;								/* Thread-specific socket */
 		struct sockaddr_in addr;						/* Address */
-		struct sockaddr_in* clientAddr;					/* Client address */
+		struct sockaddr_in clientAddr;					/* Client address */
 		int addrLength;									/* Length of addr field */
-		Msg* reqHdr;									/* Thread-initiating request */
+		Msg* curRqt;									/* The latest received request */
 		
 		// Methods
-		Msg* msgGet(SOCKET, SOCKADDR*, int*);			/* Gets a request message */
+		Msg* msgGet(SOCKET, struct sockaddr_in);		/* Gets a request message */
+		void handleCurrentMessage();					/* Decide what response (if any) is appropriate. */
 		int msgSend(int , Msg*);						/* Send the response */
+		bool isHandshakeCompleted();					/* Determines whether the final handshake message is addressed to the correct server */
 
+		// Message creation
+		Msg* createServerHandshake();					/* Send 2nd handshake */
 	public:
-		FtpThread() { reqHdr = NULL; }					/* Constructs the worker thread with sufficient data to receive a new request header */
+		FtpThread(int serverPort):inPort(serverPort) { curRqt = NULL; serverIdentifier = rand(); currentState = Initialized; }
 		void listen(int, struct sockaddr_in);			/* Receives the handshake */
 		virtual void run();								/* Starts the thread for every client request */
 		void sendFileData(char []);						/* Sends the contents of the file (get)*/
