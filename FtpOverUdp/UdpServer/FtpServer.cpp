@@ -179,84 +179,6 @@ int FtpThread::msgSend(int sock, Msg * msg_ptr)
 }
 
 /**
- * Function - sendFileData
- * Usage: Transfer the requested file to client
- *
- * @arg: char[]
- */
-void FtpThread::sendFileData(char fName[20])
-{	
-	Msg sendMsg;
-	sendMsg.type = RESP;
-	Resp responseMsg;
-	int numBytesSent = 0;
-
-	ifstream fileToRead;
-	int result;
-	struct _stat stat_buf;	
-	
-	/* Lock the code section */
-	memset(responseMsg.response,0,sizeof(responseMsg));
-	/* Check the file status and pack the response */
-	if((result = _stat(fName,&stat_buf))!=0)
-	{
-		strcpy(responseMsg.response,"No such file");
-		memset(sendMsg.buffer,'\0',BUFFER_LENGTH);
-		memcpy(sendMsg.buffer,&responseMsg,sizeof(responseMsg));
-		sendMsg.length = 13;
-
-		/* Send the contents of file recursively */
-		if((numBytesSent = msgSend(thrdSock, &sendMsg))==SOCKET_ERROR)
-		{
-			cout << "Socket Error occured while sending data " << endl;
-			closesocket(thrdSock);
-			
-			return;
-		}
-		else 
-		{    
-			/* Reset the buffer */
-			memset(sendMsg.buffer,'\0',sizeof (sendMsg.buffer));
-		}
-	}
-	else
-	{
-		fileToRead.open(fName, ios::in | ios::binary);
-		if(fileToRead.is_open()) 
-		{
-			while (!fileToRead.eof())
-			{
-				// Initialize sendMsg
-				memset(sendMsg.buffer,'\0',BUFFER_LENGTH);
-
-				/* Read the contents of file and write into the buffer for transmission */
-				fileToRead.read(sendMsg.buffer, BUFFER_LENGTH);
-				sendMsg.length = fileToRead.gcount();
-
-				/* Transfer the content to requested client */
-				if((numBytesSent = msgSend(thrdSock, &sendMsg)) == SOCKET_ERROR)
-				{
-					cout << "Socket Error occured while sending data " << endl;
-					/* Close the connection and unlock the mutex if there is a Socket Error */
-					closesocket(thrdSock);
-					
-					return;
-				}
-				else 
-				{   
-					/* Reset the buffer and use the buffer for next transmission */
-					memset(sendMsg.buffer,'\0',sizeof (sendMsg.buffer));
-				}
-			}
-
-			cout << "File transferred completely... " << endl;
-		}
-
-		fileToRead.close();
-	}
-}
-
-/**
  * Function - run
  * Usage: Initiates client-terminated looping
  *
@@ -264,6 +186,7 @@ void FtpThread::sendFileData(char fName[20])
  */
 void FtpThread::run()
 {
+	currentSequenceNumber = serverIdentifier % SEQUENCE_RANGE;
 	handleCurrentMessage();
 
 	while (currentState != Terminated) {
@@ -296,6 +219,13 @@ void FtpThread::handleCurrentMessage()
 	} else if (currentState == ReceivingRequest && curRqt->type == REQ_GET) {
 		reply = tryLoadFile() ? getNextChunk() : getErrorMessage("No such file.");
 	} else if (currentState == Sending && curRqt->type == PUT) {
+		if (curRqt->sequenceNumber == currentSequenceNumber && !payloadData.empty()) {
+			// Iterate
+			currentSequenceNumber = (currentSequenceNumber + 1) % SEQUENCE_RANGE;
+			payloadData.pop();
+		}
+
+		reply = getNextChunk();
 	} else if (currentState == ReceivingRequest && curRqt->type == TERMINATE)
 		currentState = Terminated;
 	else
@@ -355,6 +285,7 @@ Msg* FtpThread::getNextChunk()
 	Msg* responseMsg = new Msg();
 	responseMsg->type = RESP;
 	responseMsg->length = BUFFER_LENGTH;
+	responseMsg->sequenceNumber = currentSequenceNumber;
 	memcpy(responseMsg->buffer, payloadData.front(), BUFFER_LENGTH);
 
 	return responseMsg;

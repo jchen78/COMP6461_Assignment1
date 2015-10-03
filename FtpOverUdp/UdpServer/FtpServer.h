@@ -12,7 +12,8 @@
 #define REQUEST_PORT 5001
 #define BUFFER_LENGTH 256
 #define MAXPENDING 10
-#define MSGHDRSIZE 8
+#define MSGHDRSIZE 12
+#define SEQUENCE_RANGE 2
 
 #include <queue>
 
@@ -56,6 +57,7 @@ typedef struct
 {
 	Type type;
 	int  length;
+	int  sequenceNumber;
 	char buffer[BUFFER_LENGTH];
 } Msg;
 
@@ -108,7 +110,6 @@ class FtpThread : public Thread
 		FtpThread(int serverPort):inPort(serverPort) { curRqt = NULL; serverIdentifier = rand(); currentState = Initialized; }
 		void listen(int, struct sockaddr_in);			/* Receives the handshake */
 		virtual void run();								/* Starts the thread for every client request */
-		void sendFileData(char []);						/* Sends the contents of the file (get)*/
 };
 
 #endif
