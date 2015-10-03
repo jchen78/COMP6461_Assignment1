@@ -16,6 +16,7 @@
 #include <process.h>
 #include "Thread.h"
 #include "FtpServer.h"
+#include <stdlib.h>
 
 using namespace std;
 
@@ -27,7 +28,7 @@ using namespace std;
  */
 FtpServer::FtpServer()
 {
-	nextServerSock = REQUEST_PORT + 1;
+	nextServerPort = REQUEST_PORT + 1;
 	WSADATA wsadata;
 	/* Initialize Windows Socket information */
 	if (WSAStartup(0x0202,&wsadata)!=0)
@@ -62,7 +63,7 @@ FtpServer::FtpServer()
 	/* Binding the server socket to the Port Number */
     if (::bind(serverSock, (struct sockaddr *) &ServerAddr, sizeof(ServerAddr)) < 0)
 	{
-		cerr << "Socket Binding Error,exit" << endl;
+		cerr << "Socket Binding Error from FtpServer,exit" << endl;
 		exit(1);
 	}
 }
@@ -75,6 +76,7 @@ FtpServer::FtpServer()
  */
 FtpServer::~FtpServer()
 {
+	closesocket(serverSock);
 	WSACleanup();
 }
 
@@ -88,7 +90,7 @@ void FtpServer::start()
 {
 	for (;;) /* Run forever */
 	{
-		FtpThread * pt = new FtpThread();
+		FtpThread * pt = new FtpThread(nextServerPort++);
 		
 		// Wait for a request
 		pt->listen(serverSock, ServerAddr);
@@ -105,13 +107,28 @@ void FtpServer::start()
  *
  * @arg: void
  */
-void FtpThread::listen(int sock, struct sockaddr_in initialPort)
+void FtpThread::listen(int sock, struct sockaddr_in initialSocket)
 {
-	serverSock = sock;
-	addr = initialPort;
-	memcpy(addr.sin_zero, initialPort.sin_zero, 8);
-	addrLength = sizeof(addr);
-	reqHdr = msgGet(sock, (SOCKADDR *)&addr, &addrLength);
+	/* Socket Creation */
+	if ((thrdSock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
+	{
+		std::cerr << "Socket Creation Error,exit" << endl;
+		exit(1);
+	}
+
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = INADDR_ANY;
+	addr.sin_port = htons(inPort);
+
+	/* Binding the server socket to the Port Number */
+    if (::bind(thrdSock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+	{
+		cerr << "Socket Binding Error from FtpThread, exit" << endl;
+		exit(1);
+	}
+
+	curRqt = msgGet(sock, initialSocket);
 }
 
 /**
@@ -120,13 +137,16 @@ void FtpThread::listen(int sock, struct sockaddr_in initialPort)
  *
  * @arg: void
  */
-Msg* FtpThread::msgGet(SOCKET sock, SOCKADDR* sockAddr, int* addrLen)
+Msg* FtpThread::msgGet(SOCKET sock, struct sockaddr_in sockAddr)
 {
 	char buffer[512];
 	int bufferLength;
+	clientAddr = sockAddr;
+	memcpy(clientAddr.sin_zero, sockAddr.sin_zero, 8);
+	addrLength = sizeof(addr);
 
 	/* Check the received Message Header */
-	if ((bufferLength = recvfrom(sock, buffer, BUFFER_LENGTH, 0, sockAddr, addrLen)) == SOCKET_ERROR)
+	if ((bufferLength = recvfrom(sock, buffer, BUFFER_LENGTH, 0, (SOCKADDR *)&clientAddr, &addrLength)) == SOCKET_ERROR)
 	{
 		cerr << "recvfrom(...) failed when getting message" << endl;
 		exit(1);
@@ -145,12 +165,13 @@ Msg* FtpThread::msgGet(SOCKET sock, SOCKADDR* sockAddr, int* addrLen)
  *
  * @arg: int, Msg *
  */
-int FtpThread::msgSend(int sock,Msg * msg_ptr)
+int FtpThread::msgSend(int sock, Msg * msg_ptr)
 {
 	int n;
 	int expectedMsgLen = MSGHDRSIZE + msg_ptr->length;
-	if ((n = sendto(serverSock, (char *)msg_ptr, expectedMsgLen, 0, (SOCKADDR *)&addr, addrLength)) != expectedMsgLen) {
+	if ((n = sendto(sock, (char *)msg_ptr, expectedMsgLen, 0, (SOCKADDR *)&clientAddr, addrLength)) != expectedMsgLen) {
 		std::cerr << "Send MSGHDRSIZE+length Error " << endl;
+		std::cerr << WSAGetLastError() << endl;
 		return(-1);
 	}
 
@@ -172,8 +193,7 @@ void FtpThread::sendFileData(char fName[20])
 
 	ifstream fileToRead;
 	int result;
-	struct _stat stat_buf;
-	
+	struct _stat stat_buf;	
 	
 	/* Lock the code section */
 	memset(responseMsg.response,0,sizeof(responseMsg));
@@ -186,10 +206,10 @@ void FtpThread::sendFileData(char fName[20])
 		sendMsg.length = 13;
 
 		/* Send the contents of file recursively */
-		if((numBytesSent = msgSend(serverSock, &sendMsg))==SOCKET_ERROR)
+		if((numBytesSent = msgSend(thrdSock, &sendMsg))==SOCKET_ERROR)
 		{
 			cout << "Socket Error occured while sending data " << endl;
-			closesocket(serverSock);
+			closesocket(thrdSock);
 			
 			return;
 		}
@@ -214,11 +234,11 @@ void FtpThread::sendFileData(char fName[20])
 				sendMsg.length = fileToRead.gcount();
 
 				/* Transfer the content to requested client */
-				if((numBytesSent = msgSend(serverSock, &sendMsg)) == SOCKET_ERROR)
+				if((numBytesSent = msgSend(thrdSock, &sendMsg)) == SOCKET_ERROR)
 				{
 					cout << "Socket Error occured while sending data " << endl;
 					/* Close the connection and unlock the mutex if there is a Socket Error */
-					closesocket(serverSock);
+					closesocket(thrdSock);
 					
 					return;
 				}
@@ -228,44 +248,76 @@ void FtpThread::sendFileData(char fName[20])
 					memset(sendMsg.buffer,'\0',sizeof (sendMsg.buffer));
 				}
 			}
+
 			cout << "File transferred completely... " << endl;
 		}
+
 		fileToRead.close();
 	}
-	/* Close the connection and unlock the Mutex after successful transfer */
-	closesocket(serverSock);
 }
 
 /**
  * Function - run
- * Usage: Based on the requested operation, invokes the appropriate function
+ * Usage: Initiates client-terminated looping
  *
  * @arg: void
  */
 void FtpThread::run()
 {
-	
+	handleCurrentMessage();
+
+	while (!isTerminated)
+		curRqt = msgGet(thrdSock, addr);
+
+	/* Close the connection and unlock the Mutex after successful transfer */
+	closesocket(thrdSock);
+}
+
+void FtpThread::handleCurrentMessage()
+{
 	/*Start receiving the request */
-	if (reqHdr == NULL)
+	if (curRqt == NULL)
 	{
 		cerr << "Receive Req error,exit " << endl;
 		return;
 	}
+
+	Msg* reply = NULL;
 	
 	/* Check the type of operation and Construct the response and send to Client */
-	if(reqHdr->type==REQ_GET)
-	{
-		Req *requestPtr = (Req *)reqHdr->buffer; //Pointer to the Request Packet
+	if (curRqt->type == HANDSHAKE)
+		reply = createServerHandshake();
+	else if (curRqt->type == REQ_GET) {
+		Req *requestPtr = (Req *)curRqt->buffer; //Pointer to the Request Packet
 		cout <<"User " << requestPtr->hostname <<" requested file "<< requestPtr->filename << " to be sent" << endl;
 		
-		/* Transfer the requested file to Client */
+		/* Initiates the transfer to the client */
 		sendFileData(requestPtr->filename);
-	}
-	else
-	{
+	} else if (curRqt->type == TERMINATE)
+		isTerminated = true;
+	else {
 		cerr << "Invalid request header, exit" << endl;
 		return;
 	}
+	
+	if (reply != NULL) {
+		msgSend(thrdSock, reply);
+		delete reply;
+	}
+}
+
+Msg* FtpThread::createServerHandshake()
+{
+	Msg* handshakeAck = new Msg(*curRqt);
+	int lenClientData = 0;
+	while (isdigit(handshakeAck->buffer[lenClientData]))
+		lenClientData++;
+	
+	std::string serverPart = ",";
+	serverPart += std::to_string((_ULonglong)serverIdentifier);
+	strcpy(&handshakeAck->buffer[lenClientData], serverPart.c_str());
+
+	return handshakeAck;
 }
 
 /**

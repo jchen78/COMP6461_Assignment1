@@ -17,8 +17,11 @@
 /* Type of Messages */
 typedef enum
 {
-	REQ_GET = 1,
-	RESP = 3
+	HANDSHAKE = 1,
+	REQ_GET = 2,
+	RESP = 3,
+	ACK = 4,
+	TERMINATE = 5
 } Type;
 
 /* Request message structure */
@@ -46,11 +49,11 @@ typedef struct
 class FtpServer
 {
 	private:
-		int serverSock,clientSock;				/* Socket descriptor for server and client*/
-		int nextServerSock;						/* Socket for next worker thread */
+		int serverSock;							/* Socket descriptor for server and client*/
 		struct sockaddr_in ClientAddr;			/* Client address */
 		struct sockaddr_in ServerAddr;			/* Server address */
 		unsigned short ServerPort;				/* Server port */
+		unsigned short nextServerPort;			/* Socket for next worker thread */
 		int clientLen;							/* Length of Server address data structure */
 		char serverName[HOSTNAME_LENGTH];		/* Server Name */
 
@@ -65,18 +68,23 @@ class FtpThread : public Thread
 {
 	private:
 		// Fields
-		int serverSock;									/* ServerSocket */
+		int serverIdentifier;							/*  */
+		int inPort;										/* Initial, server-wide socket */
+		bool isTerminated;								/* Indicates whether the client has ended the FTP session */
+		SOCKET thrdSock;								/* Thread-specific socket */
 		struct sockaddr_in addr;						/* Address */
-		struct sockaddr_in* clientAddr;					/* Client address */
+		struct sockaddr_in clientAddr;					/* Client address */
 		int addrLength;									/* Length of addr field */
-		Msg* reqHdr;									/* Thread-initiating request */
+		Msg* curRqt;									/* The latest received request */
 		
 		// Methods
-		Msg* msgGet(SOCKET, SOCKADDR*, int*);			/* Gets a request message */
+		Msg* createServerHandshake();					/*  */
+		Msg* msgGet(SOCKET, struct sockaddr_in);		/* Gets a request message */
+		void handleCurrentMessage();					/* Decide what response (if any) is appropriate. */
 		int msgSend(int , Msg*);						/* Send the response */
 
 	public:
-		FtpThread() { reqHdr = NULL; }					/* Constructs the worker thread with sufficient data to receive a new request header */
+		FtpThread(int serverPort):inPort(serverPort) { curRqt = NULL; isTerminated = false; serverIdentifier = rand(); }
 		void listen(int, struct sockaddr_in);			/* Receives the handshake */
 		virtual void run();								/* Starts the thread for every client request */
 		void sendFileData(char []);						/* Sends the contents of the file (get)*/
