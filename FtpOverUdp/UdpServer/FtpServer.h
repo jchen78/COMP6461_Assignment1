@@ -18,11 +18,22 @@
 typedef enum
 {
 	HANDSHAKE = 1,
-	REQ_GET = 2,
-	RESP = 3,
-	ACK = 4,
-	TERMINATE = 5
+	COMPLETE_HANDSHAKE = 2,
+	REQ_LIST = 5,
+	REQ_GET = 6,
+	RESP = 10,
+	ACK = 15,
+	TERMINATE = 20
 } Type;
+
+typedef enum
+{
+	Initialized,
+	HandshakeStarted,
+	ReceivingRequest,
+	Sending,
+	Terminated
+} ThreadState;
 
 /* Request message structure */
 typedef struct
@@ -70,7 +81,7 @@ class FtpThread : public Thread
 		// Fields
 		int serverIdentifier;							/*  */
 		int inPort;										/* Initial, server-wide socket */
-		bool isTerminated;								/* Indicates whether the client has ended the FTP session */
+		ThreadState currentState;						/* Indicates the current state of the server, as defined by the requests received */
 		SOCKET thrdSock;								/* Thread-specific socket */
 		struct sockaddr_in addr;						/* Address */
 		struct sockaddr_in clientAddr;					/* Client address */
@@ -78,13 +89,15 @@ class FtpThread : public Thread
 		Msg* curRqt;									/* The latest received request */
 		
 		// Methods
-		Msg* createServerHandshake();					/*  */
 		Msg* msgGet(SOCKET, struct sockaddr_in);		/* Gets a request message */
 		void handleCurrentMessage();					/* Decide what response (if any) is appropriate. */
 		int msgSend(int , Msg*);						/* Send the response */
+		bool isHandshakeCompleted();					/* Determines whether the final handshake message is addressed to the correct server */
 
+		// Message creation
+		Msg* createServerHandshake();					/* Send 2nd handshake */
 	public:
-		FtpThread(int serverPort):inPort(serverPort) { curRqt = NULL; isTerminated = false; serverIdentifier = rand(); }
+		FtpThread(int serverPort):inPort(serverPort) { curRqt = NULL; serverIdentifier = rand(); currentState = Initialized; }
 		void listen(int, struct sockaddr_in);			/* Receives the handshake */
 		virtual void run();								/* Starts the thread for every client request */
 		void sendFileData(char []);						/* Sends the contents of the file (get)*/

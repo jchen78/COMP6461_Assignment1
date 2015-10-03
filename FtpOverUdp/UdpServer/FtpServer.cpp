@@ -266,8 +266,10 @@ void FtpThread::run()
 {
 	handleCurrentMessage();
 
-	while (!isTerminated)
+	while (currentState != Terminated) {
 		curRqt = msgGet(thrdSock, addr);
+		handleCurrentMessage();
+	}
 
 	/* Close the connection and unlock the Mutex after successful transfer */
 	closesocket(thrdSock);
@@ -285,20 +287,23 @@ void FtpThread::handleCurrentMessage()
 	Msg* reply = NULL;
 	
 	/* Check the type of operation and Construct the response and send to Client */
-	if (curRqt->type == HANDSHAKE)
+	if (currentState == Initialized && curRqt->type == HANDSHAKE) {
 		reply = createServerHandshake();
-	else if (curRqt->type == REQ_GET) {
+		currentState = HandshakeStarted;
+	} else if (currentState == HandshakeStarted && curRqt->type == COMPLETE_HANDSHAKE) {
+		if (isHandshakeCompleted())
+			currentState = ReceivingRequest;
+	} else if (currentState == ReceivingRequest && curRqt->type == REQ_GET) {
 		Req *requestPtr = (Req *)curRqt->buffer; //Pointer to the Request Packet
 		cout <<"User " << requestPtr->hostname <<" requested file "<< requestPtr->filename << " to be sent" << endl;
 		
 		/* Initiates the transfer to the client */
 		sendFileData(requestPtr->filename);
-	} else if (curRqt->type == TERMINATE)
-		isTerminated = true;
-	else {
-		cerr << "Invalid request header, exit" << endl;
-		return;
-	}
+	} else if (currentState == Sending && curRqt->type == ACK) {
+	} else if (currentState == ReceivingRequest && curRqt->type == TERMINATE)
+		currentState = Terminated;
+	else
+		cerr << "Invalid request header; ignored and waiting for next request" << endl;
 	
 	if (reply != NULL) {
 		msgSend(thrdSock, reply);
@@ -318,6 +323,13 @@ Msg* FtpThread::createServerHandshake()
 	strcpy(&handshakeAck->buffer[lenClientData], serverPart.c_str());
 
 	return handshakeAck;
+}
+
+
+
+bool FtpThread::isHandshakeCompleted()
+{
+	return std::stoi(curRqt->buffer) == serverIdentifier;
 }
 
 /**
