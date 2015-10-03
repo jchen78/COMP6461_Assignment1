@@ -294,12 +294,8 @@ void FtpThread::handleCurrentMessage()
 		if (isHandshakeCompleted())
 			currentState = ReceivingRequest;
 	} else if (currentState == ReceivingRequest && curRqt->type == REQ_GET) {
-		Req *requestPtr = (Req *)curRqt->buffer; //Pointer to the Request Packet
-		cout <<"User " << requestPtr->hostname <<" requested file "<< requestPtr->filename << " to be sent" << endl;
-		
-		/* Initiates the transfer to the client */
-		sendFileData(requestPtr->filename);
-	} else if (currentState == Sending && curRqt->type == ACK) {
+		reply = tryLoadFile() ? getNextChunk() : getErrorMessage("No such file.");
+	} else if (currentState == Sending && curRqt->type == PUT) {
 	} else if (currentState == ReceivingRequest && curRqt->type == TERMINATE)
 		currentState = Terminated;
 	else
@@ -325,11 +321,53 @@ Msg* FtpThread::createServerHandshake()
 	return handshakeAck;
 }
 
-
-
 bool FtpThread::isHandshakeCompleted()
 {
 	return std::stoi(curRqt->buffer) == serverIdentifier;
+}
+
+bool FtpThread::tryLoadFile()
+{
+	ifstream fileToRead;
+	fileToRead.open(curRqt->buffer);
+	char* currentBuffer = NULL;
+	if (fileToRead.is_open()) {
+		while (!fileToRead.eof()) {
+			currentBuffer = new char[BUFFER_LENGTH];
+			memset(currentBuffer, '\0', BUFFER_LENGTH);
+			fileToRead.read(currentBuffer, BUFFER_LENGTH);
+
+			payloadData.push(currentBuffer);
+		}
+
+		// TODO: May need to insert EOF char!
+		return true;
+	}
+
+	return false;
+}
+
+Msg* FtpThread::getNextChunk()
+{
+	if (payloadData.empty())
+		return NULL;
+
+	Msg* responseMsg = new Msg();
+	responseMsg->type = RESP;
+	responseMsg->length = BUFFER_LENGTH;
+	memcpy(responseMsg->buffer, payloadData.front(), BUFFER_LENGTH);
+
+	return responseMsg;
+}
+
+Msg* FtpThread::getErrorMessage(const char* text)
+{
+	Msg* errorMsg = new Msg();
+	errorMsg->type = RESP_ERR;
+	errorMsg->length = BUFFER_LENGTH;
+	strcpy(errorMsg->buffer, text);
+
+	return errorMsg;
 }
 
 /**
