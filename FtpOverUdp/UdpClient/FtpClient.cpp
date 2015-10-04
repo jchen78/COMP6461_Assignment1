@@ -80,7 +80,7 @@ unsigned long FtpClient::ResolveName(string name)
 int FtpClient::msgSend(int clientSocket,Msg * msg_ptr)
 {
 	int len;
-	if((len=send(clientSocket,(char *)msg_ptr,MSGHDRSIZE+msg_ptr->length,0))!=(MSGHDRSIZE+msg_ptr->length))
+	if((len=sendto(clientSocket,(char *)msg_ptr,MSGHDRSIZE+msg_ptr->length,0))!=(MSGHDRSIZE+msg_ptr->length))
 	{
 		cerr<<"Send MSGHDRSIZE+length Error";
 		return(1);
@@ -138,7 +138,7 @@ void FtpClient::getOperation()
 
 	ofstream myFile (fileName, ios::out | ios::binary);
 	/* Retrieve the contents of the file and write the contents to the created file */
-	while((numBytesRecv = recv(clientSock,receiveMsg.buffer,BUFFER_LENGTH,0))>0)
+	while((numBytesRecv = recvfrom(clientSock,receiveMsg.buffer,BUFFER_LENGTH,0))>0)
 	{
 		/* If the file does not exist in the server, close the connection and exit */
 		if(strcmp(receiveMsg.buffer, "No such file") == 0)
