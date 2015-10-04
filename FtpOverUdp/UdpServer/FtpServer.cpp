@@ -179,84 +179,6 @@ int FtpThread::msgSend(int sock, Msg * msg_ptr)
 }
 
 /**
- * Function - sendFileData
- * Usage: Transfer the requested file to client
- *
- * @arg: char[]
- */
-void FtpThread::sendFileData(char fName[20])
-{	
-	Msg sendMsg;
-	sendMsg.type = RESP;
-	Resp responseMsg;
-	int numBytesSent = 0;
-
-	ifstream fileToRead;
-	int result;
-	struct _stat stat_buf;	
-	
-	/* Lock the code section */
-	memset(responseMsg.response,0,sizeof(responseMsg));
-	/* Check the file status and pack the response */
-	if((result = _stat(fName,&stat_buf))!=0)
-	{
-		strcpy(responseMsg.response,"No such file");
-		memset(sendMsg.buffer,'\0',BUFFER_LENGTH);
-		memcpy(sendMsg.buffer,&responseMsg,sizeof(responseMsg));
-		sendMsg.length = 13;
-
-		/* Send the contents of file recursively */
-		if((numBytesSent = msgSend(thrdSock, &sendMsg))==SOCKET_ERROR)
-		{
-			cout << "Socket Error occured while sending data " << endl;
-			closesocket(thrdSock);
-			
-			return;
-		}
-		else 
-		{    
-			/* Reset the buffer */
-			memset(sendMsg.buffer,'\0',sizeof (sendMsg.buffer));
-		}
-	}
-	else
-	{
-		fileToRead.open(fName, ios::in | ios::binary);
-		if(fileToRead.is_open()) 
-		{
-			while (!fileToRead.eof())
-			{
-				// Initialize sendMsg
-				memset(sendMsg.buffer,'\0',BUFFER_LENGTH);
-
-				/* Read the contents of file and write into the buffer for transmission */
-				fileToRead.read(sendMsg.buffer, BUFFER_LENGTH);
-				sendMsg.length = fileToRead.gcount();
-
-				/* Transfer the content to requested client */
-				if((numBytesSent = msgSend(thrdSock, &sendMsg)) == SOCKET_ERROR)
-				{
-					cout << "Socket Error occured while sending data " << endl;
-					/* Close the connection and unlock the mutex if there is a Socket Error */
-					closesocket(thrdSock);
-					
-					return;
-				}
-				else 
-				{   
-					/* Reset the buffer and use the buffer for next transmission */
-					memset(sendMsg.buffer,'\0',sizeof (sendMsg.buffer));
-				}
-			}
-
-			cout << "File transferred completely... " << endl;
-		}
-
-		fileToRead.close();
-	}
-}
-
-/**
  * Function - run
  * Usage: Initiates client-terminated looping
  *
@@ -264,6 +186,7 @@ void FtpThread::sendFileData(char fName[20])
  */
 void FtpThread::run()
 {
+	currentSequenceNumber = serverIdentifier % SEQUENCE_RANGE;
 	handleCurrentMessage();
 
 	while (currentState != Terminated) {
@@ -294,12 +217,20 @@ void FtpThread::handleCurrentMessage()
 		if (isHandshakeCompleted())
 			currentState = ReceivingRequest;
 	} else if (currentState == ReceivingRequest && curRqt->type == REQ_GET) {
-		Req *requestPtr = (Req *)curRqt->buffer; //Pointer to the Request Packet
-		cout <<"User " << requestPtr->hostname <<" requested file "<< requestPtr->filename << " to be sent" << endl;
-		
-		/* Initiates the transfer to the client */
-		sendFileData(requestPtr->filename);
-	} else if (currentState == Sending && curRqt->type == ACK) {
+		reply = tryLoadFile() ? getNextChunk() : getErrorMessage("No such file.");
+	} else if (currentState == ReceivingRequest && curRqt->type == REQ_LIST) {
+		loadDirectoryContents();
+		reply = getNextChunk();
+	} else if (currentState == Sending && curRqt->type == PUT) {
+		if (curRqt->sequenceNumber == currentSequenceNumber && !payloadData.empty()) {
+			// Iterate
+			currentSequenceNumber = (currentSequenceNumber + 1) % SEQUENCE_RANGE;
+			payloadData.pop(); // TODO: Manage memory?
+			if (payloadData.empty())
+				currentState = ReceivingRequest;
+		}
+
+		reply = getNextChunk();
 	} else if (currentState == ReceivingRequest && curRqt->type == TERMINATE)
 		currentState = Terminated;
 	else
@@ -325,11 +256,99 @@ Msg* FtpThread::createServerHandshake()
 	return handshakeAck;
 }
 
-
-
 bool FtpThread::isHandshakeCompleted()
 {
 	return std::stoi(curRqt->buffer) == serverIdentifier;
+}
+
+bool FtpThread::tryLoadFile()
+{
+	// Empties out any data which may be remaining in the queue, if any
+	if (!payloadData.empty())
+		queue<char*>().swap(payloadData);
+
+	ifstream fileToRead;
+	fileToRead.open(string(filesDirectory).append(curRqt->buffer));
+	char* currentBuffer = NULL;
+	if (fileToRead.is_open()) {
+		while (!fileToRead.eof()) {
+			currentBuffer = new char[BUFFER_LENGTH];
+			memset(currentBuffer, '\0', BUFFER_LENGTH);
+			fileToRead.read(currentBuffer, BUFFER_LENGTH);
+
+			payloadData.push(currentBuffer);
+		}
+
+		// TODO: May need to insert EOF char!
+		return true;
+	}
+
+	return false;
+}
+
+void FtpThread::loadDirectoryContents()
+{
+	// Empties out any data which may be remaining in the queue, if any
+	if (!payloadData.empty())
+		queue<char*>().swap(payloadData);
+
+	// Code adapted from https://msdn.microsoft.com/en-us/library/windows/desktop/aa365200(v=vs.85).aspx
+	// Removed most of the error-checking --it is the responsibility of the person setting up the server to ensure that directories and files are set up correctly
+    WIN32_FIND_DATA ffd;
+    TCHAR szDir[MAX_PATH];
+    size_t length_of_arg;
+    HANDLE hFind = INVALID_HANDLE_VALUE;
+
+	char *buffer = new char[BUFFER_LENGTH];
+	int currIndex = 0;
+	memset(buffer, '\0', BUFFER_LENGTH);
+	hFind = FindFirstFile("files\\*", &ffd);
+    do
+    {
+        if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+        {
+			for (int i = 0; i < sizeof(ffd.cFileName); i++, currIndex++) {
+				if (currIndex == BUFFER_LENGTH) {
+					payloadData.push(buffer);
+					buffer = new char[BUFFER_LENGTH];
+					memset(buffer, '\0', BUFFER_LENGTH);
+					currIndex = 0;
+				}
+
+				buffer[currIndex] = ffd.cFileName[i];
+				if (buffer[currIndex] == '\0')
+					i = sizeof(ffd.cFileName);
+			}
+        }
+    }
+    while (FindNextFile(hFind, &ffd) != 0);
+
+	payloadData.push(buffer);
+}
+
+Msg* FtpThread::getNextChunk()
+{
+	if (payloadData.empty())
+		return NULL;
+
+	currentState = Sending;
+	Msg* responseMsg = new Msg();
+	responseMsg->type = RESP;
+	responseMsg->length = BUFFER_LENGTH;
+	responseMsg->sequenceNumber = currentSequenceNumber;
+	memcpy(responseMsg->buffer, payloadData.front(), BUFFER_LENGTH);
+
+	return responseMsg;
+}
+
+Msg* FtpThread::getErrorMessage(const char* text)
+{
+	Msg* errorMsg = new Msg();
+	errorMsg->type = RESP_ERR;
+	errorMsg->length = BUFFER_LENGTH;
+	strcpy(errorMsg->buffer, text);
+
+	return errorMsg;
 }
 
 /**
