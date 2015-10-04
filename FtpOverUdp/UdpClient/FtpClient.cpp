@@ -5,7 +5,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "FtpClient.h"
 using namespace std;
-#define _CRT_SECURE_NO_WARNINGS
+
 /**
  * Constructor - FtpClient
  * Usage: Initialize the connection status 
@@ -25,7 +25,7 @@ FtpClient::FtpClient()
 void FtpClient::run()
 {	
 	/* Socket Creation */
-	if ((clientSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) 
+	if ((clientSock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) 
 	{
 		cerr<<"Socket Creation Error";
 		connectionStatus = false;
@@ -99,7 +99,7 @@ int FtpClient::msgSend(int clientSocket,Msg * msg_ptr)
 void FtpClient::getOperation()
 { 
 	/* Socket creation */
-	if ((clientSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) //create the socket
+	if ((clientSock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) //create the socket
 	{
 		cerr<<"Socket Creation Error";
 		return;
