@@ -4,7 +4,12 @@
 **************************************************************************************/
 #define _CRT_SECURE_NO_WARNINGS
 #include "FtpClient.h"
+#include <time.h> 
 using namespace std;
+/*Create random ack and syn number*/
+srand((unsigned)time(NULL));
+int ack = rand() %256;;
+int syn = rand() %256;;
 
 /**
  * Constructor - FtpClient
