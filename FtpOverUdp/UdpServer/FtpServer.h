@@ -109,7 +109,7 @@ class FtpThread : public Thread
 		Msg* getNextChunk();							/* Wraps the current payload inside a Msg object */
 		Msg* getErrorMessage(const char*);				/* Wraps an error message inside a Msg object */
 	public:
-		FtpThread(int serverPort):inPort(serverPort) { curRqt = NULL; serverIdentifier = rand(); filesDirectory = "files\\"; currentState = Initialized; }
+		FtpThread(int serverPort):inPort(serverPort) { srand(time(NULL)); curRqt = NULL; serverIdentifier = rand(); filesDirectory = "files\\"; currentState = Initialized; }
 		void listen(int, struct sockaddr_in);			/* Receives the handshake */
 		virtual void run();								/* Starts the thread for every client request */
 };

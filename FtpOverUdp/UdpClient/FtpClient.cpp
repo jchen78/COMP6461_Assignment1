@@ -4,6 +4,7 @@
 **************************************************************************************/
 #define _CRT_SECURE_NO_WARNINGS
 #include "FtpClient.h"
+#include <time.h>
 using namespace std;
 
 /**
@@ -15,6 +16,8 @@ using namespace std;
 FtpClient::FtpClient()
 {
 	connectionStatus = true;
+	srand(time(NULL));
+	clientIdentifier = rand();
 }
 /**
  * Function - run
@@ -77,19 +80,45 @@ unsigned long FtpClient::ResolveName(string name)
  *
  * @arg: int, Msg *
  */
-int FtpClient::msgSend(int clientSocket,Msg * msg_ptr)
+int FtpClient::msgSend(int sock, Msg * msg_ptr)
 {
-	int len;
-	if((len=send(clientSocket,(char *)msg_ptr,MSGHDRSIZE+msg_ptr->length,0))!=(MSGHDRSIZE+msg_ptr->length))
-	{
-		cerr<<"Send MSGHDRSIZE+length Error";
-		return(1);
+	int n;
+	int expectedMsgLen = MSGHDRSIZE + msg_ptr->length;
+	int addrLength = sizeof(ServAddr);
+	if ((n = sendto(sock, (char *)msg_ptr, expectedMsgLen, 0, (SOCKADDR *)&ServAddr, addrLength)) != expectedMsgLen) {
+		std::cerr << "Send MSGHDRSIZE+length Error " << endl;
+		std::cerr << WSAGetLastError() << endl;
+		return(-1);
 	}
-	/*Return the length of data in bytes, which has been sent out successfully */
-	return (len-MSGHDRSIZE);
 
+	return (n-MSGHDRSIZE);
 }
+/**
+ * Function - getMsg
+ * Usage: Blocks until the next incoming packet is completely received; returns the packet formatted as a message.
+ *
+ * @arg: void
+ */
+Msg* FtpClient::msgGet(SOCKET sock)
+{
+	char buffer[512];
+	int bufferLength;
+	int addrLength = sizeof(ServAddr);
 
+	/* Check the received Message Header */
+	if ((bufferLength = recvfrom(sock, buffer, BUFFER_LENGTH, 0, (SOCKADDR *)&ServAddr, &addrLength)) == SOCKET_ERROR)
+	{
+		cerr << "recvfrom(...) failed when getting message" << endl;
+		cerr << WSAGetLastError() << endl;
+		exit(1);
+	}
+
+	// must destruct after use!
+	Msg* msg = new Msg();
+	memcpy(msg, buffer, MSGHDRSIZE);
+	memcpy(msg->buffer, buffer + MSGHDRSIZE, msg->length);
+	return msg;
+}
 /**
  * Function - getOperation
  * Usage: Establish connection and retrieve file from server
@@ -105,10 +134,9 @@ void FtpClient::getOperation()
 		return;
 	}
 	/* Establish connection with Server */
-	ServPort=REQUEST_PORT;
 	memset(&ServAddr, 0, sizeof(ServAddr));     /* Zero out structure */
 	ServAddr.sin_family      = AF_INET;             /* Internet address family */
-	ServAddr.sin_addr.s_addr = ResolveName(serverIpAdd);   /* Server IP address */
+	ServAddr.sin_addr.s_addr = ResolveName(serverName);   /* Server IP address */
 	ServAddr.sin_port        = htons(ServPort); /* Server port */
 	if (connect(clientSock, (struct sockaddr *) &ServAddr, sizeof(ServAddr)) < 0)
 	{
@@ -127,7 +155,7 @@ void FtpClient::getOperation()
 	memcpy(sendMsg.buffer,&reqMessage,sizeof(reqMessage));
 	/* Include the length of the buffer */
 	sendMsg.length=sizeof(sendMsg.buffer);
-	cout << endl << endl << "Sent Request to " << serverIpAdd << ", Waiting... " << endl;
+	cout << endl << endl << "Sent Request to " << serverName << ", Waiting... " << endl;
 	/* Send the packed message */
 	numBytesSent = msgSend(clientSock, &sendMsg);
     if (numBytesSent == SOCKET_ERROR)
@@ -206,25 +234,101 @@ void FtpClient::showMenu()
  *
  * @arg: void
  */
-void FtpClient::startClient()
+bool FtpClient::startClient()
 {
 	/* Initialize WinSocket */
 	if (WSAStartup(0x0202,&wsaData)!=0)
 	{
 		WSACleanup();
 	    cerr<<"Error in starting WSAStartup()";
-		return;
+		return false;
 	}
 
 	/* Get Host Name */
 	if(gethostname(hostName,HOSTNAME_LENGTH)!=0) 
 	{
 		cerr<<"can not get the host name,program ";
-		return;
+		return false;
 	}
+	
 	cout <<"ftp_tcp starting on host: "<<hostName<<endl;
 	cout <<"Type name of ftp server: "<<endl;
-	getline (cin,serverIpAdd);
+	getline(cin,serverName);
+	
+	return performHandshake();
+}
+
+bool FtpClient::performHandshake()
+{
+	/* Socket Creation */
+	if ((clientSock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
+	{
+		std::cerr << "Socket Creation Error; exit" << endl;
+		exit(1);
+	}
+
+	struct sockaddr_in addr;
+	memset(&addr, 0, sizeof(addr));
+	addr.sin_family = AF_INET;
+	addr.sin_addr.s_addr = INADDR_ANY;
+	addr.sin_port = htons(0);
+
+	/* Binding the server socket to the Port Number */
+    if (::bind(clientSock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
+	{
+		cerr << "Socket Binding Error from FtpThread, exit" << endl;
+		exit(1);
+	}
+
+	memset(&ServAddr, 0, sizeof(ServAddr));
+	ServAddr.sin_family = AF_INET;
+	ServAddr.sin_addr.S_un.S_addr = ResolveName(serverName);
+	ServAddr.sin_port = htons(HANDSHAKE_PORT);
+
+	Msg* request = getInitialHandshakeMessage();
+	msgSend(clientSock, request);
+
+	struct sockaddr_in newServer;
+	Msg* reply = msgGet(clientSock);
+	delete request;
+
+	request = processFinalHandshakeMessage(reply);
+	msgSend(clientSock, request);
+	delete request;
+	delete reply;
+
+	return true;
+}
+
+Msg* FtpClient::getInitialHandshakeMessage()
+{
+	Msg* request = new Msg();
+	request->type = HANDSHAKE;
+	request->length = BUFFER_LENGTH;
+	memset(request->buffer, 0, BUFFER_LENGTH);
+	strcpy(request->buffer, std::to_string((_ULonglong)clientIdentifier).c_str());
+	
+	return request;
+}
+
+Msg* FtpClient::processFinalHandshakeMessage(Msg *serverHandshake)
+{
+	int startIndex = 0;
+	for (; startIndex < serverHandshake->length && serverHandshake->buffer[startIndex] != ','; startIndex++);
+	startIndex++;
+	
+	serverIdentifier = 0;
+	Msg* request = new Msg();
+	request->type = HANDSHAKE;
+	request->length = BUFFER_LENGTH;
+	memset(request->buffer, 0, BUFFER_LENGTH);
+	for (int i = 0; serverHandshake->buffer[startIndex + i] != '\0'; i++) {
+		char currentDigit = serverHandshake->buffer[startIndex + i];
+		serverIdentifier = serverIdentifier * 10 + (currentDigit - '0');
+		request->buffer[i] = currentDigit;
+	}
+	
+	return request;
 }
 
 /**
@@ -248,8 +352,10 @@ FtpClient::~FtpClient()
 int main(int argc, char *argv[])
 {
 	FtpClient * tc=new FtpClient();
-	tc->startClient();
-	while(1)
+	if (!tc->startClient())
+		return 1;
+
+	while (true)
 	{
 		tc->showMenu();
 	}
