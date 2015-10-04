@@ -226,6 +226,8 @@ void FtpThread::handleCurrentMessage()
 			// Iterate
 			currentSequenceNumber = (currentSequenceNumber + 1) % SEQUENCE_RANGE;
 			payloadData.pop(); // TODO: Manage memory?
+			if (payloadData.empty())
+				currentState = ReceivingRequest;
 		}
 
 		reply = getNextChunk();
@@ -261,6 +263,10 @@ bool FtpThread::isHandshakeCompleted()
 
 bool FtpThread::tryLoadFile()
 {
+	// Empties out any data which may be remaining in the queue, if any
+	if (!payloadData.empty())
+		queue<char*>().swap(payloadData);
+
 	ifstream fileToRead;
 	fileToRead.open(string(filesDirectory).append(curRqt->buffer));
 	char* currentBuffer = NULL;
@@ -282,8 +288,9 @@ bool FtpThread::tryLoadFile()
 
 void FtpThread::loadDirectoryContents()
 {
-	// Empties out any data which may be remaining in the queue.
-	queue<char*>().swap(payloadData);
+	// Empties out any data which may be remaining in the queue, if any
+	if (!payloadData.empty())
+		queue<char*>().swap(payloadData);
 
 	// Code adapted from https://msdn.microsoft.com/en-us/library/windows/desktop/aa365200(v=vs.85).aspx
 	// Removed most of the error-checking --it is the responsibility of the person setting up the server to ensure that directories and files are set up correctly
@@ -304,10 +311,13 @@ void FtpThread::loadDirectoryContents()
 				if (currIndex == BUFFER_LENGTH) {
 					payloadData.push(buffer);
 					buffer = new char[BUFFER_LENGTH];
+					memset(buffer, '\0', BUFFER_LENGTH);
 					currIndex = 0;
 				}
 
 				buffer[currIndex] = ffd.cFileName[i];
+				if (buffer[currIndex] == '\0')
+					i = sizeof(ffd.cFileName);
 			}
         }
     }
@@ -321,6 +331,7 @@ Msg* FtpThread::getNextChunk()
 	if (payloadData.empty())
 		return NULL;
 
+	currentState = Sending;
 	Msg* responseMsg = new Msg();
 	responseMsg->type = RESP;
 	responseMsg->length = BUFFER_LENGTH;
