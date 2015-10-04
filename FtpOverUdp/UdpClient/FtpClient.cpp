@@ -5,7 +5,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "FtpClient.h"
 using namespace std;
-
+#define _CRT_SECURE_NO_WARNINGS
 /**
  * Constructor - FtpClient
  * Usage: Initialize the connection status 
