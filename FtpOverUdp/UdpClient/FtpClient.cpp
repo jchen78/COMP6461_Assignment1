@@ -15,7 +15,7 @@
 #include <fstream>
 #include <process.h>
 #include "Thread.h"
-#include "FtpServer.h"
+#include "FtpClient.h"
 #include <stdlib.h>
 
 using namespace std;
