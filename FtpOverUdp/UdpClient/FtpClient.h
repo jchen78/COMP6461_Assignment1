@@ -76,22 +76,23 @@ class FtpClient
 		WSADATA wsaData;				/* Variable to store socket information */
 		string serverName;				/* Variable to store Server IP Address */
 		string transferType;			/* Variable to store the Type of Operation */
-		string fileName;				/* Variable to store name of the file for retrieval or transfer */
 		int numBytesSent;				/* Variable to store the bytes of data sent to the server */
 		int numBytesRecv;				/* Variable to store the bytes of data received from the server */
 		int bufferSize;					/* Variable to specify the buffer size */
 		bool connectionStatus;			/* Variable to specify the status of the socket connection */
 		
+		Msg* msgGet();
+		int msgSend(Msg *);				/* Sends the packed message to server */
+	
 		bool performHandshake();		/* Initiates and completes 3-way handshake w/ the server */
 		Msg* getInitialHandshakeMessage();
 		Msg* processFinalHandshakeMessage(Msg*);
-		Msg* msgGet(SOCKET);
-		int msgSend(int, Msg *);		/* Sends the packed message to server */
-	
+
+		void setAckMessage(Msg*);
+
 	public:
 		FtpClient();
-		void run();						/* Invokes the appropriate function based on selected option */
-		void getOperation();			/* Retrieves the file from Server */
+		void performGet();				/* Retrieves the file from Server */
 		void showMenu();				/* Displays the list of available options for User */
 		bool startClient();				/* Starts the client process . Returns true if client has successfully completed the handshake, or false otherwise.*/
 		unsigned long ResolveName(string name);	/* Resolve the specified host name */

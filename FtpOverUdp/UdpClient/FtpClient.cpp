@@ -19,40 +19,6 @@ FtpClient::FtpClient()
 	srand(time(NULL));
 	clientIdentifier = rand();
 }
-/**
- * Function - run
- * Usage: Based on the user selected option invokes the appropriate function
- *
- * @arg: void
- */
-void FtpClient::run()
-{	
-	/* Socket Creation */
-	if ((clientSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) 
-	{
-		cerr<<"Socket Creation Error";
-		connectionStatus = false;
-		return;
-	}
-
-	/* Based on the Selected option invoke the appropriate function */
-	if(strcmp(transferType.c_str(),"get")==0)
-	{
-		cin.ignore();
-		if(connectionStatus)
-		{
-			/* Initiate file retrieval */
-			sendMsg.type=REQ_GET;
-			getOperation();
-		}
-	}
-	else
-	{
-		cerr<<"Wrong request type";
-		return;
-	}
-
-}
 
 /**
  * Function - ResolveName
@@ -78,14 +44,14 @@ unsigned long FtpClient::ResolveName(string name)
  * Function - msgSend
  * Usage: Returns the length of bytes in msg_ptr->buffer,which have been sent out successfully
  *
- * @arg: int, Msg *
+ * @arg: Msg *
  */
-int FtpClient::msgSend(int sock, Msg * msg_ptr)
+int FtpClient::msgSend(Msg * msg_ptr)
 {
 	int n;
 	int expectedMsgLen = MSGHDRSIZE + msg_ptr->length;
 	int addrLength = sizeof(ServAddr);
-	if ((n = sendto(sock, (char *)msg_ptr, expectedMsgLen, 0, (SOCKADDR *)&ServAddr, addrLength)) != expectedMsgLen) {
+	if ((n = sendto(clientSock, (char *)msg_ptr, expectedMsgLen, 0, (SOCKADDR *)&ServAddr, addrLength)) != expectedMsgLen) {
 		std::cerr << "Send MSGHDRSIZE+length Error " << endl;
 		std::cerr << WSAGetLastError() << endl;
 		return(-1);
@@ -94,19 +60,19 @@ int FtpClient::msgSend(int sock, Msg * msg_ptr)
 	return (n-MSGHDRSIZE);
 }
 /**
- * Function - getMsg
+ * Function - msgGet
  * Usage: Blocks until the next incoming packet is completely received; returns the packet formatted as a message.
  *
  * @arg: void
  */
-Msg* FtpClient::msgGet(SOCKET sock)
+Msg* FtpClient::msgGet()
 {
 	char buffer[512];
 	int bufferLength;
 	int addrLength = sizeof(ServAddr);
 
 	/* Check the received Message Header */
-	if ((bufferLength = recvfrom(sock, buffer, BUFFER_LENGTH, 0, (SOCKADDR *)&ServAddr, &addrLength)) == SOCKET_ERROR)
+	if ((bufferLength = recvfrom(clientSock, buffer, BUFFER_LENGTH, 0, (SOCKADDR *)&ServAddr, &addrLength)) == SOCKET_ERROR)
 	{
 		cerr << "recvfrom(...) failed when getting message" << endl;
 		cerr << WSAGetLastError() << endl;
@@ -125,68 +91,51 @@ Msg* FtpClient::msgGet(SOCKET sock)
  *
  * @arg: void
  */
-void FtpClient::getOperation()
+void FtpClient::performGet()
 { 
-	/* Socket creation */
-	if ((clientSock = socket(PF_INET, SOCK_STREAM, IPPROTO_TCP)) < 0) //create the socket
-	{
-		cerr<<"Socket Creation Error";
-		return;
-	}
-	/* Establish connection with Server */
-	memset(&ServAddr, 0, sizeof(ServAddr));     /* Zero out structure */
-	ServAddr.sin_family      = AF_INET;             /* Internet address family */
-	ServAddr.sin_addr.s_addr = ResolveName(serverName);   /* Server IP address */
-	ServAddr.sin_port        = htons(ServPort); /* Server port */
-	if (connect(clientSock, (struct sockaddr *) &ServAddr, sizeof(ServAddr)) < 0)
-	{
-		cerr<<"Socket Connection Error " << endl;
-		return;
-	}
-	/* Get the hostname */
-	if(gethostname(reqMessage.hostname,HOSTNAME_LENGTH)!=0) 
-	{
-		cerr << "can not get the host name " <<endl;
-		return;
-	}
-	cout <<"Type name of file to be retrieved: "<<endl;
-	getline (cin,fileName);
-	strcpy(reqMessage.filename,fileName.c_str());
-	memcpy(sendMsg.buffer,&reqMessage,sizeof(reqMessage));
-	/* Include the length of the buffer */
-	sendMsg.length=sizeof(sendMsg.buffer);
-	cout << endl << endl << "Sent Request to " << serverName << ", Waiting... " << endl;
-	/* Send the packed message */
-	numBytesSent = msgSend(clientSock, &sendMsg);
+	string fileName;
+	cout << "Type name of file to be retrieved: ";
+	getline(cin, fileName);
+
+	sendMsg.type = REQ_GET;
+	strcpy(sendMsg.buffer,fileName.c_str());
+	sendMsg.length = fileName.length();
+	numBytesSent = msgSend(&sendMsg);
     if (numBytesSent == SOCKET_ERROR)
 	{
 		cout << "Send failed.. Check the Message length.. " << endl;     
 		return;
 	}
 
+	cout << endl << endl << "Sent Request to " << serverName << ", Waiting... " << endl;
+	/* Send the packed message */
+
+	Msg* serverMsg = msgGet();
 	ofstream myFile (fileName, ios::out | ios::binary);
-	/* Retrieve the contents of the file and write the contents to the created file */
-	while((numBytesRecv = recv(clientSock,receiveMsg.buffer,BUFFER_LENGTH,0))>0)
-	{
-		/* If the file does not exist in the server, close the connection and exit */
-		if(strcmp(receiveMsg.buffer, "No such file") == 0)
-		{
-			cout << receiveMsg.buffer << endl;
-			myFile.close();
-			remove(fileName.c_str());
-			closesocket(clientSock);
-			return;
-		}
-		else /* If the file exists, start reading the contents of the file */
-		{
-			myFile.write (receiveMsg.buffer, numBytesRecv);
-			memset (receiveMsg.buffer, 0,sizeof(receiveMsg.buffer));
-		}
-    }
-	/* Close the connection after the file is received */
-    cout << "File received "<< endl << endl;
-	myFile.close();
-	closesocket(clientSock);
+	while (serverMsg->type != RESP_ERR) {
+		myFile.write (serverMsg->buffer, serverMsg->length);
+		setAckMessage(serverMsg);
+		delete serverMsg;
+
+		msgSend(&sendMsg);
+		serverMsg = msgGet();
+	}
+
+	if(strcmp(serverMsg->buffer, "End of file.") == 0) {
+		cout << "File received "<< endl << endl;
+		myFile.close();
+	} else {
+		cout << serverMsg->buffer << endl;
+		myFile.close();
+		remove(fileName.c_str());
+	}
+}
+
+void FtpClient::setAckMessage(Msg* previousPart)
+{
+	sendMsg.length = 0;
+	sendMsg.type = PUT;
+	sendMsg.sequenceNumber = previousPart->sequenceNumber;
 }
 
 /**
@@ -201,19 +150,21 @@ void FtpClient::showMenu()
 	cout << "1 : GET " << endl;
 	cout << "2 : EXIT " << endl;
 	cout << "Please select the operation that you want to perform : ";
+	
 	/* Check if invalid value is provided and reset if cin error flag is set */
 	if(!(cin >> optionVal))
 	{
 		cout << endl << "Input Types does not match " << endl;
 		cin.clear();
-		cin.ignore(250, '\n');
 	}
+	
+	cin.ignore(250, '\n');
+	
 	/* Based on the option selected by User, set the transfer type and invoke the appropriate function */
 	switch (optionVal)
 	{
 		case 1:
-			transferType = "get";
-			run();
+			performGet();
 			break;
 
 		case 2:
@@ -289,11 +240,11 @@ bool FtpClient::performHandshake()
 	msgSend(clientSock, request);
 
 	struct sockaddr_in newServer;
-	Msg* reply = msgGet(clientSock);
+	Msg* reply = msgGet();
 	delete request;
 
 	request = processFinalHandshakeMessage(reply);
-	msgSend(clientSock, request);
+	msgSend(request);
 	delete request;
 	delete reply;
 

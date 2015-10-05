@@ -132,10 +132,10 @@ void FtpThread::listen(int sock, struct sockaddr_in initialSocket)
 }
 
 /**
- * Function - getMsg
+ * Function - msgGet
  * Usage: Blocks until the next incoming packet is completely received; returns the packet formatted as a message.
  *
- * @arg: void
+ * @arg: socket, address
  */
 Msg* FtpThread::msgGet(SOCKET sock, struct sockaddr_in sockAddr)
 {
