@@ -30,7 +30,7 @@ FtpClient::FtpClient()
 void FtpClient::run()
 {	
 	/* Socket Creation */
-	if ((clientSock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) 
+	if ((clientSock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) 
 	{
 		cerr<<"Socket Creation Error";
 		connectionStatus = false;
@@ -85,6 +85,8 @@ unsigned long FtpClient::ResolveName(string name)
 int FtpClient::msgSend(int clientSocket,Msg * msg_ptr)
 {
 	int len;
+	int expectedMsgLen = MSGHDRSIZE + msg_ptr->length;
+	int addrLength = sizeof(addr);
 	if((len=sendto(clientSocket,(char *)msg_ptr,expectedMsgLen,0,(SOCKADDR *)&addr, addrLength)))!=(expectedMsgLen))
 	{
 		cerr<<"Send MSGHDRSIZE+length Error";
@@ -104,7 +106,7 @@ int FtpClient::msgSend(int clientSocket,Msg * msg_ptr)
 void FtpClient::getOperation()
 { 
 	/* Socket creation */
-	if ((clientSock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) //create the socket
+	if ((clientSock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0) //create the socket
 	{
 		cerr<<"Socket Creation Error";
 		return;
@@ -115,11 +117,7 @@ void FtpClient::getOperation()
 	ServAddr.sin_family      = AF_INET;             /* Internet address family */
 	ServAddr.sin_addr.s_addr = ResolveName(serverIpAdd);   /* Server IP address */
 	ServAddr.sin_port        = htons(ServPort); /* Server port */
-	if (connect(clientSock, (struct sockaddr *) &ServAddr, sizeof(ServAddr)) < 0)
-	{
-		cerr<<"Socket Connection Error " << endl;
-		return;
-	}
+	/*UDP does not need connect() function which is set for hand shake*/
 	/* Get the hostname */
 	if(gethostname(reqMessage.hostname,HOSTNAME_LENGTH)!=0) 
 	{
@@ -145,6 +143,7 @@ void FtpClient::getOperation()
 	/* Retrieve the contents of the file and write the contents to the created file */
 	char buffer[512];
 	int bufferLength;
+	int addrLength = sizeof(addr);
 	while((numBytesRecv = recvfrom(clientSock,buffer,BUFFER_LENGTH,0,(SOCKADDR *)&addr, &addrLength)))>0)
 	{
 		/* If the file does not exist in the server, close the connection and exit */
@@ -264,76 +263,3 @@ int main(int argc, char *argv[])
 	return 0;
 }
 
-
-/**
-#include<stdio.h>
-#include<winsock2.h>
-
-#pragma comment(lib,"ws2_32.lib") //Winsock Library
-
-#define SERVER "127.0.0.1"  //ip address of udp server
-#define BUFLEN 512  //Max length of buffer
-#define PORT 8888   //The port on which to listen for incoming data
-#pragma warning(disable:4996)
-int main(void)
-{
-	struct sockaddr_in si_other;
-	int s, slen = sizeof(si_other);
-	char buf[BUFLEN];
-	char message[BUFLEN];
-	WSADATA wsa;
-
-	//Initialise winsock
-	printf("\nInitialising Winsock...");
-	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0)
-	{
-		printf("Failed. Error Code : %d", WSAGetLastError());
-		exit(EXIT_FAILURE);
-	}
-	printf("Initialised.\n");
-
-	//create socket
-	if ((s = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) == SOCKET_ERROR)
-	{
-		printf("socket() failed with error code : %d", WSAGetLastError());
-		exit(EXIT_FAILURE);
-	}
-
-	//setup address structure
-	memset((char *)&si_other, 0, sizeof(si_other));
-	si_other.sin_family = AF_INET;
-	si_other.sin_port = htons(PORT);
-	si_other.sin_addr.S_un.S_addr = inet_addr(SERVER);
-
-	//start communication
-	for (int i = 0; i <= 100; i++)
-	{
-		printf("Enter message : ");
-		gets(message);
-
-		//send the message
-		if (sendto(s, message, strlen(message), 0, (struct sockaddr *) &si_other, slen) == SOCKET_ERROR)
-		{
-			printf("sendto() failed with error code : %d", WSAGetLastError());
-			exit(EXIT_FAILURE);
-		}
-
-		//receive a reply and print it
-		//clear the buffer by filling null, it might have previously received data
-		memset(buf, '\0', BUFLEN);
-		//try to receive some data, this is a blocking call
-		if (recvfrom(s, buf, BUFLEN, 0, (struct sockaddr *) &si_other, &slen) == SOCKET_ERROR)
-		{
-			printf("recvfrom() failed with error code : %d", WSAGetLastError());
-			exit(EXIT_FAILURE);
-		}
-
-		puts(buf);
-	}
-
-	closesocket(s);
-	WSACleanup();
-
-	return 0;
-}
-*/
