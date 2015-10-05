@@ -85,22 +85,22 @@ class FtpThread : public Thread
 {
 private:
 	// Fields
-	int serverIdentifier;							/* Random number to identify the server in the 3-way handshake */
+        int clientIdentifier;							/* Random number to identify the client in the 3-way handshake */
 	int inPort;										/* Initial, server-wide socket */
-	ThreadState currentState;						/* Indicates the current state of the server, as defined by the requests received */
+	ThreadState currentState;						/* Indicates the current state of the client, as defined by the response received */
 	SOCKET thrdSock;								/* Thread-specific socket */
 	struct sockaddr_in addr;						/* Address */
-	struct sockaddr_in serverAddr;					/*Server address */
+	struct sockaddr_in serverAddr;					/* Server address */
 	int addrLength;									/* Length of addr field */
-	int currentSequenceNumber;						/* The sequence number (updated AFTER processing each request, as required) */
+	int currentSequenceNumber;						/* The sequence number (updated AFTER processing each response, as required) */
 	std::string filesDirectory;						/* */
-	std::queue<char*> payloadData;					/* The data to be sent. Until ACK is received, the previously sent chunk is kept at the top. */
-	Msg* curRqt;									/* The latest received request */
+	std::queue<char*> payloadData;					/* The data to be received. Until ACK is received, the previously sent chunk is kept at the top. */
+	Msg* curRqt;									/* The latest received response */
 
 	// Methods
-	Msg* msgGet(SOCKET, struct sockaddr_in);		/* Gets a request message */
+	Msg* msgGet(SOCKET, struct sockaddr_in);		/* Gets a response message */
 	void handleCurrentMessage();					/* Decide what response (if any) is appropriate. */
-	int msgSend(int, Msg*);						/* Send the response */
+	int msgSend(int, Msg*);						/* Send the request */
 	bool isHandshakeCompleted();					/* Determines whether the final handshake message is addressed to the correct server */
 	bool tryLoadFile();								/* Retrieves the file in curRqt, if possible. Returns true if the file is found & loaded, or false otherwise. */
 	void loadDirectoryContents();					/*  */
