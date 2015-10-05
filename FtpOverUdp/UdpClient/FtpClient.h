@@ -112,7 +112,7 @@ private:
 public:
 	FtpThread(int serverPort) :inPort(serverPort) { srand(time(NULL)); curRqt = NULL; serverIdentifier = rand(); filesDirectory = "files\\"; currentState = Initialized; }
 	void listen(int, struct sockaddr_in);			/* Receives the handshake */
-	virtual void run();								/* Starts the thread for every client request */
+	virtual void run();								/* Starts the thread for succussful initiation */
 };
 
 #endif
