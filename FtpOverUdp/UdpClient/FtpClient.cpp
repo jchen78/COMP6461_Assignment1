@@ -21,12 +21,12 @@
 using namespace std;
 
 /**
-* Constructor - FtpServer
+* Constructor - FtpClient
 * Usage: Initialize the socket connection
 *
 * @arg: void
 */
-FtpServer::FtpServer()
+FtpClient::FtpClient()
 {
 	nextServerPort = REQUEST_PORT + 1;
 	WSADATA wsadata;
@@ -37,59 +37,68 @@ FtpServer::FtpServer()
 		exit(1);
 	}
 
-	/* Display the name of the host */
-	if (gethostname(serverName, HOSTNAME_LENGTH) != 0)
+/**
+ * Function - ResolveName
+ * Usage: Returns the binary, network byte ordered address
+ *
+ * @arg: string
+ */
+unsigned long TcpClient::ResolveName(string name)
+{
+	struct hostent *host;            /* Structure containing host information */
+
+	if ((host = gethostbyname(name.c_str())) == NULL)
 	{
-		cerr << "Get the host name error,exit" << endl;
-		exit(1);
+		cerr<<"gethostbyname() failed"<<endl;
+		return(1);
 	}
 
-	cout << "Server: " << serverName << " waiting to be contacted for get/put request..." << endl;
+	/* Return the binary, network byte ordered address */
+	return *((unsigned long *) host->h_addr_list[0]);
+}
+
 
 	/* Socket Creation */
-	if ((serverSock = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
+        if ((clientSock = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
 	{
 		std::cerr << "Socket Creation Error,exit" << endl;
 		exit(1);
 	}
 
-	/* Fill-in Server Port and Address information */
-	ServerPort = REQUEST_PORT;
-	memset(&ServerAddr, 0, sizeof(ServerAddr));      /* Zero out structure */
-	ServerAddr.sin_family = AF_INET;                 /* Internet address family */
-	ServerAddr.sin_addr.s_addr = INADDR_ANY;  /* Any incoming interface */
-	ServerAddr.sin_port = htons(ServerPort);         /* Local port */
-
-	/* Binding the server socket to the Port Number */
-	if (::bind(serverSock, (struct sockaddr *) &ServerAddr, sizeof(ServerAddr)) < 0)
-	{
-		cerr << "Socket Binding Error from FtpServer,exit" << endl;
-		exit(1);
-	}
-}
+	
 
 /**
-* Destructor - ~FtpServer
+* Destructor - ~FtpClient
 * Usage: DeAllocate the allocated memory
 *
 * @arg: void
 */
-FtpServer::~FtpServer()
+FtpClient::~FtpClient()
 {
-	closesocket(serverSock);
+	closesocket(clientSock);
 	WSACleanup();
 }
 
 /**
 * Function - start
-* Usage: Listen and handle the requests from clients
+* Usage: Usage: Listen and handle the requests from server
 *
 * @arg: void
 */
-void FtpServer::start()
+void FtpClient::start()
 {
 	for (;;) /* Run forever */
 	{
+	  /* Get Host Name */
+	  if (gethostname(hostName, HOSTNAME_LENGTH) != 0)
+  	  {
+		cerr << "can not get the host name,program ";
+		return;
+	}
+	       cout << "Ftp starting on host: " << hostName << endl;
+ 	       cout << "Type name of ftp server: " << endl;
+	       getline(cin, serverIpAdd);
+		
 		FtpThread * pt = new FtpThread(nextServerPort++);
 
 		// Wait for a request
