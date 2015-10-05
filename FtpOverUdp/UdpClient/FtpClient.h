@@ -1,80 +1,117 @@
 /*************************************************************************************
-*								 File Name	: Client.h		   			 	         *
-*	Usage : Sends request to Server for Uploading, downloading and listing of files  *
+*								 File Name	: Server.h		   			 	         *
+*	Usage : Handles Client request for Uploading, downloading and listing of files   *
 **************************************************************************************/
-
-#include <winsock.h>
-#include <cstdio>
-#include <iostream>
-#include <cstring>
-#include <string>
-#include <fstream>
-#include <climits>
-#include <windows.h>
-
-using namespace std;
+#ifndef SER_TCP_H
+#define SER_TCP_H
 
 #pragma comment(lib, "Ws2_32.lib")
 #define HOSTNAME_LENGTH 20
+#define RESP_LENGTH 40
 #define FILENAME_LENGTH 20
 #define REQUEST_PORT 5001
 #define BUFFER_LENGTH 256
-#define MSGHDRSIZE 8
+#define MAXPENDING 10
+#define MSGHDRSIZE 12
+#define SEQUENCE_RANGE 2
 
-/* Types of Messages */
+#include <queue>
+
+/* Type of Messages */
 typedef enum
 {
-	REQ_GET=1
+	HANDSHAKE = 1,
+	COMPLETE_HANDSHAKE = 2,
+	REQ_LIST = 5,
+	REQ_GET = 6,
+	RESP = 10,
+	RESP_ERR = 12,
+	PUT = 15,
+	TERMINATE = 20
 } Type;
 
-/* Structure of Request */
+typedef enum
+{
+	Initialized,
+	HandshakeStarted,
+	ReceivingRequest,
+	Sending,
+	Terminated
+} ThreadState;
+
+/* Request message structure */
 typedef struct
 {
 	char hostname[HOSTNAME_LENGTH];
 	char filename[FILENAME_LENGTH];
-} Req;  
+} Req;
 
-/* Buffer for uploading file contents */
+/* Response message structure */
 typedef struct
 {
-	char dataBuffer[BUFFER_LENGTH];
-} DataContent; //For Put Operation
+	char response[RESP_LENGTH];
+} Resp;
 
-/* Message format used for sending and receiving */
+/* Message format used for sending and receiving datas */
 typedef struct
 {
 	Type type;
-	int  length; /* length of effective bytes in the buffer */
+	int  length;
+	int  sequenceNumber;
 	char buffer[BUFFER_LENGTH];
-	char dataBuffer[BUFFER_LENGTH];
-} Msg; 
+} Msg;
 
-/* FtpClient Class */
-class FtpClient
+/* FtpServer Class */
+class FtpServer
 {
-	private:
-		int clientSock;					/* Socket descriptor */
-		struct sockaddr_in ServAddr;	/* Server socket address */
-		unsigned short ServPort;		/* Server port */
-		char hostName[HOSTNAME_LENGTH];	/* Host Name */
-		Req reqMessage;					/* Variable to store Request Message */
-		Msg sendMsg,receiveMsg;			/* Message structure variables for Sending and Receiving data */
-		WSADATA wsaData;				/* Variable to store socket information */
-		string serverIpAdd;				/* Variable to store Server IP Address */
-		string transferType;			/* Variable to store the Type of Operation */
-		string fileName;				/* Variable to store name of the file for retrieval or transfer */
-		int numBytesSent;				/* Variable to store the bytes of data sent to the server */
-		int numBytesRecv;				/* Variable to store the bytes of data received from the server */
-		int bufferSize;					/* Variable to specify the buffer size */
-		bool connectionStatus;			/* Variable to specify the status of the socket connection */
-	
-	public:
-		FtpClient(); 
-		void run();						/* Invokes the appropriate function based on selected option */
-		void getOperation();			/* Retrieves the file from Server */
-		void showMenu();				/* Displays the list of available options for User */
-		void startClient();				/* Starts the client process */
-		int msgSend(int ,Msg * );		/* Sends the packed message to server */
-		unsigned long ResolveName(string name);	/* Resolve the specified host name */
-		~FtpClient();		
+private:
+	int serverSock;							/* Socket descriptor for server and client*/
+	struct sockaddr_in ClientAddr;			/* Client address */
+	struct sockaddr_in ServerAddr;			/* Server address */
+	unsigned short ServerPort;				/* Server port */
+	unsigned short nextServerPort;			/* Socket for next worker thread */
+	int clientLen;							/* Length of Server address data structure */
+	char serverName[HOSTNAME_LENGTH];		/* Server Name */
+
+public:
+	FtpServer();
+	~FtpServer();
+	void start();							/* Starts the FtpServer */
 };
+
+/* FtpThread Class */
+class FtpThread : public Thread
+{
+private:
+	// Fields
+	int serverIdentifier;							/* Random number to identify the server in the 3-way handshake */
+	int inPort;										/* Initial, server-wide socket */
+	ThreadState currentState;						/* Indicates the current state of the server, as defined by the requests received */
+	SOCKET thrdSock;								/* Thread-specific socket */
+	struct sockaddr_in addr;						/* Address */
+	struct sockaddr_in serverAddr;					/*Server address */
+	int addrLength;									/* Length of addr field */
+	int currentSequenceNumber;						/* The sequence number (updated AFTER processing each request, as required) */
+	std::string filesDirectory;						/* */
+	std::queue<char*> payloadData;					/* The data to be sent. Until ACK is received, the previously sent chunk is kept at the top. */
+	Msg* curRqt;									/* The latest received request */
+
+	// Methods
+	Msg* msgGet(SOCKET, struct sockaddr_in);		/* Gets a request message */
+	void handleCurrentMessage();					/* Decide what response (if any) is appropriate. */
+	int msgSend(int, Msg*);						/* Send the response */
+	bool isHandshakeCompleted();					/* Determines whether the final handshake message is addressed to the correct server */
+	bool tryLoadFile();								/* Retrieves the file in curRqt, if possible. Returns true if the file is found & loaded, or false otherwise. */
+	void loadDirectoryContents();					/*  */
+
+	// Message creation
+	Msg* createServerHandshake();					/* Send 2nd handshake */
+	Msg* getNextChunk();							/* Wraps the current payload inside a Msg object */
+	Msg* getErrorMessage(const char*);				/* Wraps an error message inside a Msg object */
+public:
+	FtpThread(int serverPort) :inPort(serverPort) { srand(time(NULL)); curRqt = NULL; serverIdentifier = rand(); filesDirectory = "files\\"; currentState = Initialized; }
+	void listen(int, struct sockaddr_in);			/* Receives the handshake */
+	virtual void run();								/* Starts the thread for every client request */
+};
+
+#endif
