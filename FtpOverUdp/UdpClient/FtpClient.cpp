@@ -216,43 +216,43 @@ void FtpThread::handleCurrentMessage()
 		return;
 	}
 
-	Msg* reply = NULL;
+	Msg* ask = NULL;
 
-	/* Check the type of operation and Construct the response and send to Client */
+	/* Check the type of operation and Construct the response and send to Server */
 	if (currentState == Initialized && curRqt->type == HANDSHAKE) {
-		reply = createServerHandshake();
+		ask = createServerHandshake();
 		currentState = HandshakeStarted;
 	}
 	else if (currentState == HandshakeStarted && curRqt->type == COMPLETE_HANDSHAKE) {
 		if (isHandshakeCompleted())
-			currentState = ReceivingRequest;
+			currentState = ReceivingResponse;
 	}
-	else if (currentState == ReceivingRequest && curRqt->type == REQ_GET) {
-		reply = tryLoadFile() ? getNextChunk() : getErrorMessage("No such file.");
+	else if (currentState == ReceivingResponse && curRqt->type == REQ_GET) {
+		/*call get() function*/
 	}
-	else if (currentState == ReceivingRequest && curRqt->type == REQ_LIST) {
-		loadDirectoryContents();
-		reply = getNextChunk();
+	else if (currentState == ReceivingResponse && curRqt->type == REQ_LIST) {
+		
+		/*call list() function*/
 	}
 	else if (currentState == Sending && curRqt->type == PUT) {
 		if (curRqt->sequenceNumber == currentSequenceNumber && !payloadData.empty()) {
 			// Iterate
 			currentSequenceNumber = (currentSequenceNumber + 1) % SEQUENCE_RANGE;
 			payloadData.pop(); // TODO: Manage memory?
-			if (payloadData.empty())
-				currentState = ReceivingRequest;
+			if (payloadData.push())
+				currentState = ReceivingResponse;
 		}
 
-		reply = getNextChunk();
+		ask = getNextChunk();
 	}
-	else if (currentState == ReceivingRequest && curRqt->type == TERMINATE)
+	else if (currentState == ReceivingResponse && curRqt->type == TERMINATE)
 		currentState = Terminated;
 	else
 		cerr << "Invalid request header; ignored and waiting for next request" << endl;
 
-	if (reply != NULL) {
-		msgSend(thrdSock, reply);
-		delete reply;
+	if (ask != NULL) {
+		msgSend(thrdSock, ask);
+		delete ask;
 	}
 }
 
