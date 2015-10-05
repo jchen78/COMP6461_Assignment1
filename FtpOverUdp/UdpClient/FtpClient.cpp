@@ -28,7 +28,7 @@ using namespace std;
 */
 FtpClient::FtpClient()
 {
-	nextServerPort = REQUEST_PORT + 1;
+	nextClientPort = REQUEST_PORT + 1;
 	WSADATA wsadata;
 	/* Initialize Windows Socket information */
 	if (WSAStartup(0x0202, &wsadata) != 0)
@@ -43,7 +43,7 @@ FtpClient::FtpClient()
  *
  * @arg: string
  */
-unsigned long TcpClient::ResolveName(string name)
+unsigned long FtpClient::ResolveName(string name)
 {
 	struct hostent *host;            /* Structure containing host information */
 
