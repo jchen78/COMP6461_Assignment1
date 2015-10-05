@@ -62,17 +62,18 @@ typedef struct
 } Msg;
 
 /* FtpServer Class */
-class FtpServer
+class FtpClient
 {
 private:
-	int serverSock;							/* Socket descriptor for server and client*/
+	int clientSock;							/* Socket descriptor for server and client*/
 	struct sockaddr_in ClientAddr;			/* Client address */
 	struct sockaddr_in ServerAddr;			/* Server address */
-	unsigned short ServerPort;				/* Server port */
-	unsigned short nextServerPort;			/* Socket for next worker thread */
+	unsigned short ClientPort;				/* Server port */
+	unsigned short nextClientPort;			/* Socket for next worker thread */
 	int clientLen;							/* Length of Server address data structure */
-	char serverName[HOSTNAME_LENGTH];		/* Server Name */
-
+	char hostName[HOSTNAME_LENGTH];      	/* Host Name */
+	string serverIpAdd;				/* Variable to store Server IP Address */
+	charClientName[HOSTNAME_LENGTH];		/* Server Name */
 public:
 	FtpServer();
 	~FtpServer();
