@@ -90,9 +90,12 @@ class FtpClient
 
 		void setAckMessage(Msg*);
 
+		void performGet();				/* Retrieves the file from Server */
+		void performList();
+		void terminate();
+
 	public:
 		FtpClient();
-		void performGet();				/* Retrieves the file from Server */
 		void showMenu();				/* Displays the list of available options for User */
 		bool startClient();				/* Starts the client process . Returns true if client has successfully completed the handshake, or false otherwise.*/
 		unsigned long ResolveName(string name);	/* Resolve the specified host name */

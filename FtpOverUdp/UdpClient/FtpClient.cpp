@@ -5,6 +5,7 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "FtpClient.h"
 #include <time.h>
+#include <stdlib.h>
 using namespace std;
 
 /**
@@ -131,6 +132,45 @@ void FtpClient::performGet()
 	}
 }
 
+void FtpClient::performList()
+{
+	sendMsg.type = REQ_LIST;
+	sendMsg.length = 0;
+	msgSend(&sendMsg);
+
+	Msg* serverMsg = msgGet();
+	while (serverMsg->type != RESP_ERR) {
+		char* currentBuffer = serverMsg->buffer;
+		for (int i = 0; i < serverMsg->length; i++)
+			if (currentBuffer[i] == '\0')
+				cout << endl;
+			else
+				cout << currentBuffer[i];
+
+		setAckMessage(serverMsg);
+		delete serverMsg;
+
+		msgSend(&sendMsg);
+		serverMsg = msgGet();
+	}
+
+	if(strcmp(serverMsg->buffer, "End of file.") == 0) {
+		cout << endl << endl << "End of directory listing" << endl << endl;
+	}
+}
+
+void FtpClient::terminate()
+{
+	sendMsg.type = TERMINATE;
+	sendMsg.length = 0;
+	msgSend(&sendMsg);
+
+	// Set artificially high wait time to make sure the message is completely flushed prior to exiting.
+	Sleep(250);
+
+	exit(0);
+}
+
 void FtpClient::setAckMessage(Msg* previousPart)
 {
 	sendMsg.length = 0;
@@ -169,8 +209,12 @@ void FtpClient::showMenu()
 			break;
 
 		case 2:
+			performList();
+			break;
+
+		case 3:
 			cout << "Terminating... " << endl; 
-			exit(1);
+			terminate();
 			break;
 
 		default:
