@@ -94,6 +94,7 @@ class FtpThread : public Thread
 		int currentSequenceNumber;						/* The sequence number (updated AFTER processing each request, as required) */
 		std::string filesDirectory;						/* */
 		std::queue<char*> payloadData;					/* The data to be sent. Until ACK is received, the previously sent chunk is kept at the top. */
+		int finalPayloadLength;							
 		Msg* curRqt;									/* The latest received request */
 		
 		// Methods

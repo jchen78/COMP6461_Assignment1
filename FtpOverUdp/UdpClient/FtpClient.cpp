@@ -148,11 +148,12 @@ void FtpClient::showMenu()
 {
 	int optionVal;
 	cout << "1 : GET " << endl;
-	cout << "2 : EXIT " << endl;
+	cout << "2 : LIST " << endl;
+	cout << "3 : EXIT " << endl;
 	cout << "Please select the operation that you want to perform : ";
 	
 	/* Check if invalid value is provided and reset if cin error flag is set */
-	if(!(cin >> optionVal))
+	if(!(cin >> optionVal) || optionVal < 1 || optionVal > 3)
 	{
 		cout << endl << "Input Types does not match " << endl;
 		cin.clear();
@@ -237,7 +238,7 @@ bool FtpClient::performHandshake()
 	ServAddr.sin_port = htons(HANDSHAKE_PORT);
 
 	Msg* request = getInitialHandshakeMessage();
-	msgSend(clientSock, request);
+	msgSend(request);
 
 	struct sockaddr_in newServer;
 	Msg* reply = msgGet();

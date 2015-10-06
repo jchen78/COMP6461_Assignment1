@@ -231,6 +231,8 @@ void FtpThread::handleCurrentMessage()
 		}
 
 		reply = getNextChunk();
+	} else if (currentState == ReceivingRequest && curRqt->type == PUT) {
+		reply = curRqt->sequenceNumber == currentSequenceNumber ? getErrorMessage("EOF") : NULL;
 	} else if (currentState == ReceivingRequest && curRqt->type == TERMINATE)
 		currentState = Terminated;
 	else
@@ -279,7 +281,7 @@ bool FtpThread::tryLoadFile()
 			payloadData.push(currentBuffer);
 		}
 
-		// TODO: May need to insert EOF char!
+		finalPayloadLength = fileToRead.gcount();
 		return true;
 	}
 
@@ -324,6 +326,7 @@ void FtpThread::loadDirectoryContents()
     while (FindNextFile(hFind, &ffd) != 0);
 
 	payloadData.push(buffer);
+	finalPayloadLength = currIndex == 0 ? BUFFER_LENGTH : currIndex;
 }
 
 Msg* FtpThread::getNextChunk()
@@ -334,7 +337,7 @@ Msg* FtpThread::getNextChunk()
 	currentState = Sending;
 	Msg* responseMsg = new Msg();
 	responseMsg->type = RESP;
-	responseMsg->length = BUFFER_LENGTH;
+	responseMsg->length = payloadData.size() == 1 ? finalPayloadLength : BUFFER_LENGTH;
 	responseMsg->sequenceNumber = currentSequenceNumber;
 	memcpy(responseMsg->buffer, payloadData.front(), BUFFER_LENGTH);
 
