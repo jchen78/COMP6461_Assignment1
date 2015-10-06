@@ -19,7 +19,7 @@
 #include <stdlib.h>
 
 using namespace std;
-
+ 
 /**
 * Constructor - FtpClient
 * Usage: Initialize the socket connection
