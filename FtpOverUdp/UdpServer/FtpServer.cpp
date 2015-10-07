@@ -139,16 +139,17 @@ void FtpThread::listen(int sock, struct sockaddr_in initialSocket)
  */
 Msg* FtpThread::msgGet(SOCKET sock, struct sockaddr_in sockAddr)
 {
-	char buffer[512];
+	char buffer[RCV_BUFFER_SIZE];
 	int bufferLength;
 	clientAddr = sockAddr;
 	memcpy(clientAddr.sin_zero, sockAddr.sin_zero, 8);
 	addrLength = sizeof(addr);
 
 	/* Check the received Message Header */
-	if ((bufferLength = recvfrom(sock, buffer, BUFFER_LENGTH, 0, (SOCKADDR *)&clientAddr, &addrLength)) == SOCKET_ERROR)
+	if ((bufferLength = recvfrom(sock, buffer, RCV_BUFFER_SIZE, 0, (SOCKADDR *)&clientAddr, &addrLength)) == SOCKET_ERROR)
 	{
 		cerr << "recvfrom(...) failed when getting message" << endl;
+		cerr << WSAGetLastError() << endl;
 		exit(1);
 	}
 
@@ -226,8 +227,6 @@ void FtpThread::handleCurrentMessage()
 			// Iterate
 			currentSequenceNumber = (currentSequenceNumber + 1) % SEQUENCE_RANGE;
 			payloadData.pop(); // TODO: Manage memory?
-			if (payloadData.empty())
-				currentState = ReceivingRequest;
 		}
 
 		reply = getNextChunk();
@@ -297,7 +296,6 @@ void FtpThread::loadDirectoryContents()
 	// Code adapted from https://msdn.microsoft.com/en-us/library/windows/desktop/aa365200(v=vs.85).aspx
 	// Removed most of the error-checking --it is the responsibility of the person setting up the server to ensure that directories and files are set up correctly
     WIN32_FIND_DATA ffd;
-    TCHAR szDir[MAX_PATH];
     size_t length_of_arg;
     HANDLE hFind = INVALID_HANDLE_VALUE;
 
@@ -331,8 +329,10 @@ void FtpThread::loadDirectoryContents()
 
 Msg* FtpThread::getNextChunk()
 {
-	if (payloadData.empty())
-		return NULL;
+	if (payloadData.empty()) {
+		currentState = ReceivingRequest;
+		return getErrorMessage("End of file.");
+	}
 
 	currentState = Sending;
 	Msg* responseMsg = new Msg();

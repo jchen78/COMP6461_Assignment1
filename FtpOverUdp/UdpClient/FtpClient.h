@@ -19,6 +19,7 @@ using namespace std;
 #define FILENAME_LENGTH 20
 #define HANDSHAKE_PORT 5001
 #define BUFFER_LENGTH 256
+#define RCV_BUFFER_SIZE 512
 #define MSGHDRSIZE 12
 #define SEQUENCE_RANGE 2
 

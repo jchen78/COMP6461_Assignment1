@@ -68,12 +68,12 @@ int FtpClient::msgSend(Msg * msg_ptr)
  */
 Msg* FtpClient::msgGet()
 {
-	char buffer[512];
+	char buffer[RCV_BUFFER_SIZE];
 	int bufferLength;
 	int addrLength = sizeof(ServAddr);
 
 	/* Check the received Message Header */
-	if ((bufferLength = recvfrom(clientSock, buffer, BUFFER_LENGTH, 0, (SOCKADDR *)&ServAddr, &addrLength)) == SOCKET_ERROR)
+	if ((bufferLength = recvfrom(clientSock, buffer, RCV_BUFFER_SIZE, 0, (SOCKADDR *)&ServAddr, &addrLength)) == SOCKET_ERROR)
 	{
 		cerr << "recvfrom(...) failed when getting message" << endl;
 		cerr << WSAGetLastError() << endl;
@@ -315,7 +315,7 @@ Msg* FtpClient::processFinalHandshakeMessage(Msg *serverHandshake)
 	
 	serverIdentifier = 0;
 	Msg* request = new Msg();
-	request->type = HANDSHAKE;
+	request->type = COMPLETE_HANDSHAKE;
 	request->length = BUFFER_LENGTH;
 	memset(request->buffer, 0, BUFFER_LENGTH);
 	for (int i = 0; serverHandshake->buffer[startIndex + i] != '\0'; i++) {
