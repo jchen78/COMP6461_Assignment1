@@ -1,118 +1,84 @@
 /*************************************************************************************
-*								 File Name	: Server.h		   			 	         *
-*	Usage : Handles Client request for Uploading, downloading and listing of files   *
+*								 File Name	: Client.h		   			 	         *
+*	Usage : Sends request to Server for Uploading, downloading and listing of files  *
 **************************************************************************************/
-#ifndef SER_TCP_H
-#define SER_TCP_H
+
+#include <winsock.h>
+#include <cstdio>
+#include <iostream>
+#include <cstring>
+#include <string>
+#include <fstream>
+#include <climits>
+#include <windows.h>
+
+using namespace std;
 
 #pragma comment(lib, "Ws2_32.lib")
 #define HOSTNAME_LENGTH 20
-#define RESP_LENGTH 40
 #define FILENAME_LENGTH 20
 #define REQUEST_PORT 5001
-#define BUFFER_LENGTH 256
-#define MAXPENDING 10
-#define MSGHDRSIZE 12
-#define SEQUENCE_RANGE 2
+#define BUFFER_LENGTH 1024
+#define MSGHDRSIZE 8
 
-#include <queue>
-
-/* Type of Messages */
+/* Types of Messages */
 typedef enum
 {
-	HANDSHAKE = 1,
-	COMPLETE_HANDSHAKE = 2,
-	REQ_LIST = 5,
-	REQ_GET = 6,
-	RESP = 10,
-	RESP_ERR = 12,
-	PUT = 15,
-	TERMINATE = 20
+	REQ_GET=1
 } Type;
 
-typedef enum
-{
-	Initialized,
-	HandshakeStarted,
-	ReceivingRequest,
-	Sending,
-	Terminated
-} ThreadState;
-
-/* Request message structure */
+/* Structure of Request */
 typedef struct
 {
 	char hostname[HOSTNAME_LENGTH];
 	char filename[FILENAME_LENGTH];
-} Req;
+} Req;  
 
-/* Response message structure */
+/* Buffer for uploading file contents */
 typedef struct
 {
-	char response[RESP_LENGTH];
-} Resp;
+	char dataBuffer[BUFFER_LENGTH];
+} DataContent; //For Put Operation
 
-/* Message format used for sending and receiving datas */
+/* Message format used for sending and receiving */
 typedef struct
 {
 	Type type;
-	int  length;
-	int  sequenceNumber;
+	int  length; /* length of effective bytes in the buffer */
 	char buffer[BUFFER_LENGTH];
-} Msg;
+	char dataBuffer[BUFFER_LENGTH];
+} Msg; 
 
-/* FtpServer Class */
-class FtpClient
+/* UdpClient Class */
+class UdpClient
 {
-private:
-	int clientSock;							/* Socket descriptor for server and client*/
-	struct sockaddr_in ClientAddr;			/* Client address */
-	struct sockaddr_in ServerAddr;			/* Server address */
-	unsigned short ClientPort;				/* Server port */
-	unsigned short nextClientPort;			/* Socket for next worker thread */
-	int clientLen;							/* Length of Server address data structure */
-	char hostName[HOSTNAME_LENGTH];      	/* Host Name */
-	string serverIpAdd;				/* Variable to store Server IP Address */
-	charClientName[HOSTNAME_LENGTH];		/* Server Name */
-public:
-	FtpServer();
-	~FtpServer();
-	void start();							/* Starts the FtpServer */
+	private:
+		int clientSock;					/* Socket descriptor */
+
+		
+		int addrLength = sizeof(ServAddr);
+
+		struct sockaddr_in ServAddr;	/* Server socket address */
+		unsigned short ServPort;		/* Server port */
+		char hostName[HOSTNAME_LENGTH];	/* Host Name */
+		Req reqMessage;					/* Variable to store Request Message */
+		Msg sendtoMsg,receiveMsg;			/* Message structure variables for Sending and Receiving data */
+		WSADATA wsaData;				/* Variable to store socket information */
+		string serverIpAdd;				/* Variable to store Server IP Address */
+		string transferType;			/* Variable to store the Type of Operation */
+		string fileName;				/* Variable to store name of the file for retrieval or transfer */
+		int numBytesSent;				/* Variable to store the bytes of data sent to the server */
+		int numBytesRecvfrom;				/* Variable to store the bytes of data received from the server */
+		int bufferSize;					/* Variable to specify the buffer size */
+		bool connectionStatus;			/* Variable to specify the status of the socket connection */
+	
+	public:
+		UdpClient(); 
+		void run();						/* Invokes the appropriate function based on selected option */
+		void getOperation();			/* Retrieves the file from Server */
+		void showMenu();				/* Displays the list of available options for User */
+		void startClient();				/* Starts the client process */
+		int msgsendto(int ,Msg * );		/* Sends the packed message to server */
+		unsigned long ResolveName(string name);	/* Resolve the specified host name */
+		~UdpClient();		
 };
-
-/* FtpThread Class */
-class FtpThread : public Thread
-{
-private:
-	// Fields
-        int clientIdentifier;							/* Random number to identify the client in the 3-way handshake */
-	int inPort;										/* Initial, server-wide socket */
-	ThreadState currentState;						/* Indicates the current state of the client, as defined by the response received */
-	SOCKET thrdSock;								/* Thread-specific socket */
-	struct sockaddr_in addr;						/* Address */
-	struct sockaddr_in serverAddr;					/* Server address */
-	int addrLength;									/* Length of addr field */
-	int currentSequenceNumber;						/* The sequence number (updated AFTER processing each response, as required) */
-	std::string filesDirectory;						/* */
-	std::queue<char*> payloadData;					/* The data to be received. Until ACK is received, the previously sent chunk is kept at the top. */
-	Msg* curRqt;									/* The latest received response */
-
-	// Methods
-	Msg* msgGet(SOCKET, struct sockaddr_in);		/* Gets a response message */
-	void handleCurrentMessage();					/* Decide what response (if any) is appropriate. */
-	int msgSend(int, Msg*);						/* Send the request */
-	bool isHandshakeCompleted();					/* Determines whether the final handshake message is addressed to the correct server */
-	bool tryLoadFile();								/* Retrieves the file in curRqt, if possible. Returns true if the file is found & loaded, or false otherwise. */
-	void loadDirectoryContents();					/*  */
-
-	// Message creation
-	Msg* createServerHandshake();					/* Send 2nd handshake */
-	Msg* getNextChunk();							/* Wraps the current payload inside a Msg object */
-	Msg* getErrorMessage(const char*);				/* Wraps an error message inside a Msg object */
-public:
-	FtpThread(int serverPort) :inPort(serverPort) { srand(time(NULL)); curRqt = NULL; serverIdentifier = rand(); filesDirectory = "files\\"; currentState = Initialized; }
-	void listen(int, struct sockaddr_in);			/* Receives the handshake */
-	virtual void run();								/* Starts the thread for succussful initiation */
-};
-
-#endif
