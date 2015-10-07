@@ -4,8 +4,30 @@
 **************************************************************************************/
 #define _CRT_SECURE_NO_WARNINGS
 #include "Client.h"
+#include <time.h>
 using namespace std;
 
+
+/*Create random ack and syn number*/
+ 
+int createRand(){
+	srand((unsigned)time(NULL));
+	int num = rand() % 256;
+	return num;
+}
+
+int ack;
+int syn;
+int sequenceNumber;
+int sequenceReset = 2;
+
+/*Create first sequnce number by using */
+int getFirstSequnceNumber(int i){
+	if (i % 2 == 1){
+		return 1;
+	}
+	else return 0;
+}
 
 
 /**
@@ -139,6 +161,13 @@ void UdpClient::run()
 		connectionStatus = false;
 		return;
 	}
+
+        while(1){
+        	/*Send request for establish */
+        	/*receive acknowledge */
+        	/*Send ackowledge*/
+        	/*break the loop*/
+        }
 
 
 	/* Based on the Selected option invoke the appropriate function */
