@@ -3,31 +3,36 @@
 *	Usage : sendtos request to Server for Uploading, downloading and listing of files  *
 **************************************************************************************/
 #define _CRT_SECURE_NO_WARNINGS
+#define CHUNK_SIZE (64*1024) 
 #include "Client.h"
 #include <time.h>
+#include <afx.h>
+
+
+
 using namespace std;
 
 
 /*Create random ack and syn number*/
- 
+
 int createRand(){
 	srand((unsigned)time(NULL));
 	int num = rand() % 256;
 	return num;
 }
 
-int ack;
-int syn;
-int sequenceNumber;
-int sequenceReset = 2;
 
-/*Create first sequnce number by using */
+
+
+/*Create first sequnce number by using existing ack*/
 int getFirstSequnceNumber(int i){
 	if (i % 2 == 1){
 		return 1;
 	}
 	else return 0;
 }
+
+
 
 
 /**
@@ -39,7 +44,11 @@ int getFirstSequnceNumber(int i){
 int main(int argc, char *argv[])
 {
 	UdpClient * tc = new UdpClient();
+	/*Initialize the client and establish threeWayHandShake*/
 	tc->startClient();
+	tc->threeWayHandShake();
+
+	/*Main founction*/
 	while (1)
 	{
 		tc->showMenu();
@@ -74,6 +83,9 @@ void UdpClient::startClient()
 	cout << "ftp_Udp starting on host: " << hostName << endl;
 	cout << "Type name of ftp server: " << endl;
 	getline(cin, serverIpAdd);
+
+
+
 }
 
 /**
@@ -84,9 +96,91 @@ void UdpClient::startClient()
 */
 UdpClient::UdpClient()
 {
+
+	/* Socket Creation */
+	if ((clientSock = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+	{
+		cerr << "Socket Creation Error";
+		connectionStatus = false;
+		return;
+	}
+
+
+	/* Establish connection with Server */
+	ServPort = REQUEST_PORT;
+	memset(&ServAddr, 0, sizeof(ServAddr));     /* Zero out structure */
+	ServAddr.sin_family = AF_INET;             /* Internet address family */
+	ServAddr.sin_addr.s_addr = ResolveName(serverIpAdd);   /* Server IP address */
+	ServAddr.sin_port = htons(ServPort); /* Server port */
+
+
 	connectionStatus = true;
+
 }
 
+
+/**
+* Function - threeWayHandShake
+* Usage: Establish and realize ThreeWayHandShake with server
+*
+* @arg: void
+*/
+void UdpClient::threeWayHandShake()
+{
+	/*Create the socket*/
+	if ((clientHandShakeSock = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
+	{
+		cerr << "Socket Creation Error";
+		connectionStatus = false;
+		;
+	}
+
+	/* Establish connection with Server */
+	ServPort = REQUEST_PORT;
+	memset(&ServAddr, 0, sizeof(ServAddr));    /* Zero out structure */
+	ServAddr.sin_family = AF_INET;             /* Internet address family */
+	ServAddr.sin_addr.s_addr = ResolveName(serverIpAdd);   /* Server IP address */
+	ServAddr.sin_port = htons(ServPort);       /* Server port */
+
+
+	Msg *handShakeMessage = new Msg();
+
+
+
+	/*Client send request message to the server*/
+	memcpy(handShakeMessage, &(syn = createRand()), sizeof(syn = createRand()));
+	if (msgsendto(clientHandShakeSock, handShakeMessage) == SOCKET_ERROR)
+	{
+		cerr << "Client three way hand shake request error";
+		exit(1);
+	}
+
+
+	/*Client receive response message from server*/
+	if (msgGetResponse(clientHandShakeSock, ServAddr) == NULL)
+	{
+		cerr << "Client three way hand shake get response error";
+		exit(1);
+	}
+
+	/*Check the ACK from server,if false send acknowledge number to the server*/
+	if (handShakeMessage != msgGetResponse(clientHandShakeSock, ServAddr))
+	{
+		cerr << "ACK can not match SYN ";
+		exit(1);
+	}
+	else
+	{
+		memset(handShakeMessage, '/0', sizeof(*handShakeMessage));
+		handShakeMessage = msgGetResponse(clientHandShakeSock, ServAddr);
+		/*Store the binary number of ACK sent from client to server*/
+		sequenceNumber = (int)handShakeMessage->buffer;
+		msgsendto(clientHandShakeSock, handShakeMessage);
+		exit(0);
+	}
+
+
+}
 
 
 /**
@@ -99,7 +193,9 @@ void UdpClient::showMenu()
 {
 	int optionVal;
 	cout << "1 : GET " << endl;
-	cout << "2 : EXIT " << endl;
+	cout << "2 : PUT " << endl;
+	cout << "3 : LIST " << endl;
+	cout << "4 : EXIT " << endl;
 	cout << "Please select the operation that you want to perform : ";
 	/* Check if invalid value is provided and reset if cin error flag is set */
 	if (!(cin >> optionVal))
@@ -113,10 +209,21 @@ void UdpClient::showMenu()
 	{
 	case 1:
 		transferType = "get";
-		run();
+		get();
 		break;
 
 	case 2:
+		transferType = "put";
+		put();
+		break;
+
+	case 3:
+		transferType = "list";
+		list();
+		break;
+
+
+	case 4:
 		cout << "Terminating... " << endl;
 		exit(1);
 		break;
@@ -131,43 +238,14 @@ void UdpClient::showMenu()
 
 
 /**
-* Function - run
+* Function - get
 * Usage: Based on the user selected option invokes the appropriate function
 *
 * @arg: void
 */
-void UdpClient::run()
+void UdpClient::get()
 {
 
-	/* Socket creation */
-	if ((clientSock = socket(AF_INET, SOCK_DGRAM, 0)) < 0) //create the socket
-	{
-		cerr << "Socket Creation Error";
-		return;
-	}
-
-
-	/* Establish connection with Server */
-	ServPort = REQUEST_PORT;
-	memset(&ServAddr, 0, sizeof(ServAddr));     /* Zero out structure */
-	ServAddr.sin_family = AF_INET;             /* Internet address family */
-	ServAddr.sin_addr.s_addr = ResolveName(serverIpAdd);   /* Server IP address */
-	ServAddr.sin_port = htons(ServPort); /* Server port */
-	
-	/* Socket Creation */
-	if ((clientSock = socket(AF_INET, SOCK_DGRAM, 0)) < 0)
-	{
-		cerr << "Socket Creation Error";
-		connectionStatus = false;
-		return;
-	}
-
-        while(1){
-        	/*Send request for establish */
-        	/*receive acknowledge */
-        	/*Send ackowledge*/
-        	/*break the loop*/
-        }
 
 
 	/* Based on the Selected option invoke the appropriate function */
@@ -178,7 +256,7 @@ void UdpClient::run()
 		{
 			/* Initiate file retrieval */
 			sendtoMsg.type = REQ_GET;
-			getOperation();
+			getDataOperation();
 		}
 	}
 	else
@@ -227,7 +305,7 @@ unsigned long UdpClient::ResolveName(string name)
 }
 
 /**
-* Function - msgsendto
+* Function - sendMsgto
 * Usage: Returns the length of bytes in msg_ptr->buffer,which have been sent out successfully
 *
 * @arg: int, Msg *
@@ -235,7 +313,7 @@ unsigned long UdpClient::ResolveName(string name)
 int UdpClient::msgsendto(int clientSocket, Msg * msg_ptr)
 {
 
-	
+
 	int len;
 	if ((len = sendto(clientSocket, (char *)msg_ptr, MSGHDRSIZE + msg_ptr->length, 0, (SOCKADDR *)&ServAddr, addrLength)) != (MSGHDRSIZE + msg_ptr->length))
 	{
@@ -248,15 +326,43 @@ int UdpClient::msgsendto(int clientSocket, Msg * msg_ptr)
 }
 
 /**
-* Function - getOperation
+* Function - getResponseMsg
+* Usage: Blocks until the next incoming response is completely received; returns the response.
+* @arg: void
+*/
+Msg* UdpClient::msgGetResponse(SOCKET sock, struct sockaddr_in ServAddr)
+{
+	char buffer[512];
+	int bufferLength;
+	memcpy(ServAddr.sin_zero, ServAddr.sin_zero, 8);
+	addrLength = sizeof(ServAddr);
+
+	/* Check the received Message Header */
+	if ((bufferLength = recvfrom(sock, buffer, BUFFER_LENGTH, 0, (SOCKADDR *)&ServAddr, &addrLength)) == SOCKET_ERROR)
+	{
+		cerr << "recvfrom(...) failed when getting message" << endl;
+		exit(1);
+	}
+
+	// destructor 
+	Msg* response = new Msg();
+	memcpy(response, buffer, MSGHDRSIZE);
+	memcpy(response->buffer, buffer + MSGHDRSIZE, response->length);
+	return response;
+}
+
+
+
+/**
+* Function - getDataOperation
 * Usage: Establish connection and retrieve file from server
 *
 * @arg: void
 */
-void UdpClient::getOperation()
+void UdpClient::getDataOperation()
 {
-	
-	
+	Msg *getData = new Msg();
+
 	/* Get the hostname */
 	if (gethostname(reqMessage.hostname, HOSTNAME_LENGTH) != 0)
 	{
@@ -295,6 +401,9 @@ void UdpClient::getOperation()
 		{
 			myFile.write(receiveMsg.buffer, numBytesRecvfrom);
 			memset(receiveMsg.buffer, 0, sizeof(receiveMsg.buffer));
+			getData->ACK = sequenceNumber % 2 + 1;
+			sequenceNumber +=
+				msgsendto(clientSock, getData);
 		}
 	}
 	/* Close the connection after the file is received */
@@ -303,4 +412,65 @@ void UdpClient::getOperation()
 	closesocket(clientSock);
 }
 
+/**
+* Function - put
+* Usage: upload data to server
+* Reference:http://blog.csdn.net
+* @arg: void
+*/
+void UdpClient::putDataOperation()
+{
+	DWORD   GetFileProc(COMMAND command, SOCKET client);
+
+	COMMAND  cmd;
+	FILEINFO fi;
+	memset((char*)&fi, 0, sizeof(fi));
+	memset((char*)&cmd, 0, sizeof(cmd));
+	cout << "Type name of file to be uploaded: " << endl;
+	getline(cin, fileName);
+	/*cmd.ID = fileName;*/
+
+
+	CFile file;
+	int nChunkCount = 0; //Number of chunks
+
+	if (file.Open((char*)cmd.lparam, CFile::modeRead | CFile::typeBinary))//Open file
+	{
+		int FileLen = file.GetLength(); // Read file lengh
+		fi.FileLen = file.GetLength();
+		strcpy((char*)fi.FileName, file.GetFileName()); //  Get file name
+		memcpy((char*)&cmd.lparam, (char*)&fi, sizeof(fi));
+		send(clientSock, (char*)&cmd, sizeof(cmd), 0); //Send file name and lengh
+
+		nChunkCount = FileLen / CHUNK_SIZE; // Chunk numbers of file
+		if (FileLen%nChunkCount != 0)
+			nChunkCount++;
+		char *date = new char[CHUNK_SIZE]; // Create buffer
+		for (int i = 0; i<nChunkCount; i++) //Sent chunks 
+		{
+			int nLeft;
+			if (i + 1 == nChunkCount) // The last chunk
+				nLeft = FileLen - CHUNK_SIZE*(nChunkCount - 1);
+			else
+				nLeft = CHUNK_SIZE;
+			int idx = 0;
+			file.Read(date, CHUNK_SIZE); // Read the file
+			while (nLeft>0)
+			{
+				int ret = send(clientSock, &date[idx], nLeft, 0);//Send the file
+				if (ret == SOCKET_ERROR)
+				{
+					break;
+				}
+				nLeft -= ret;
+				idx += ret;
+			}
+		}
+		file.Close();
+		delete[] date;
+	}
+
+}
+
+}
 
