@@ -173,7 +173,7 @@ void UdpClient::threeWayHandShake()
 	{
 		memset(handShakeMessage, '/0', sizeof(*handShakeMessage));
 		handShakeMessage = msgGetResponse(clientHandShakeSock, ServAddr);
-		/*Store the binary number of ACK sent from client to server*/
+		/*Store the ACK sent from client to server*/
 		sequenceNumber = (int)handShakeMessage->buffer;
 		msgsendto(clientHandShakeSock, handShakeMessage);
 		exit(0);
@@ -266,6 +266,37 @@ void UdpClient::get()
 	}
 
 }
+
+/**
+* Function - list
+* Usage: Based on the user selected option invokes the appropriate function
+*
+* @arg: void
+*/
+void UdpClient::list()
+{
+
+
+
+	/* Based on the Selected option invoke the appropriate function */
+	if (strcmp(transferType.c_str(), "get") == 0)
+	{
+		cin.ignore();
+		if (connectionStatus)
+		{
+			/* Initiate file retrieval */
+			sendtoMsg.type = REQ_LIST;
+			getDataOperation();
+		}
+	}
+	else
+	{
+		cerr << "Wrong request type";
+		return;
+	}
+
+}
+
 
 
 /**
@@ -423,8 +454,8 @@ void UdpClient::putDataOperation()
 	DWORD   GetFileProc(COMMAND command, SOCKET client);
 
 	COMMAND  cmd;
-	FILEINFO fi;
-	memset((char*)&fi, 0, sizeof(fi));
+	FILEINFO fileinfo;
+	memset((char*)&fileinfo, 0, sizeof(fileinfo));
 	memset((char*)&cmd, 0, sizeof(cmd));
 	cout << "Type name of file to be uploaded: " << endl;
 	getline(cin, fileName);
@@ -434,13 +465,13 @@ void UdpClient::putDataOperation()
 	CFile file;
 	int nChunkCount = 0; //Number of chunks
 
-	if (file.Open((char*)cmd.lparam, CFile::modeRead | CFile::typeBinary))//Open file
+	if (file.Open((char*)cmd.lparam, CFile::modeRead))//Open file
 	{
 		int FileLen = file.GetLength(); // Read file lengh
-		fi.FileLen = file.GetLength();
-		strcpy((char*)fi.FileName, file.GetFileName()); //  Get file name
-		memcpy((char*)&cmd.lparam, (char*)&fi, sizeof(fi));
-		send(clientSock, (char*)&cmd, sizeof(cmd), 0); //Send file name and lengh
+		fileinfo.FileLen = file.GetLength();
+		strcpy((char*)fileinfo.FileName, file.GetFileName()); //  Get file name
+		memcpy((char*)&cmd.lparam, (char*)&fileinfo, sizeof(fileinfo));
+		sendto(clientSock, (char*)&cmd, sizeof(cmd), 0, (SOCKADDR *)&ServAddr, addrLength); //Send file name and lengh
 
 		nChunkCount = FileLen / CHUNK_SIZE; // Chunk numbers of file
 		if (FileLen%nChunkCount != 0)
@@ -457,7 +488,7 @@ void UdpClient::putDataOperation()
 			file.Read(date, CHUNK_SIZE); // Read the file
 			while (nLeft>0)
 			{
-				int ret = send(clientSock, &date[idx], nLeft, 0);//Send the file
+				int ret = sendto(clientSock, &date[idx], nLeft, 0, (SOCKADDR *)&ServAddr, addrLength);//Send the file
 				if (ret == SOCKET_ERROR)
 				{
 					break;
@@ -472,5 +503,68 @@ void UdpClient::putDataOperation()
 
 }
 
+
+/**
+* Function - List
+* Usage: List the file directory
+*
+* @arg: void
+*/
+void UdpClient::listOperation()
+{
+	int i, count;
+	char ** result;
+	char directory[MAX_PATH];
+
+	printf("Enter the folder name");
+	scanf("%s", directory);
+
+	result = EnumFiles(directory, &count);
+
+	for (i = 0; i < count; i++)
+		printf("%s\n", result[i]);
 }
 
+
+char** EnumFiles(const char *directory, int *count)
+{
+	WIN32_FIND_DATA FindFileData;
+	HANDLE hFind;
+	char result[MAX_RESULT][MAX_PATH];
+	char **returnresult;
+	char pattern[MAX_PATH];
+	int i = 0, j;
+
+	/*Start searching*/
+	strcpy(pattern, directory);
+	strcat(pattern, "\\*.*");
+	hFind = FindFirstFile(pattern, &FindFileData);
+
+	if (hFind == INVALID_HANDLE_VALUE)
+	{
+		*count = 0;
+		return NULL;
+	}
+	else
+	{
+		do
+		{
+			strcpy(result[i++], FindFileData.cFileName);
+		} while (FindNextFile(hFind, &FindFileData) != 0);
+	}
+
+	/*End searching*/
+	FindClose(hFind);
+
+	/*Copy to the resualt*/
+	returnresult = (char **)calloc(i, sizeof(char *));
+
+	for (j = 0; j < i; j++)
+	{
+		returnresult[j] = (char *)calloc(MAX_PATH, sizeof(char));
+		strcpy(returnresult[j], result[j]);
+	}
+
+	*count = i;
+	return returnresult;
+}
