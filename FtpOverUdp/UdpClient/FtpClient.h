@@ -10,6 +10,11 @@
 #include <string>
 #include <fstream>
 #include <climits>
+#include <stdio.h>
+#include <stdlib.h>
+#include <Windows.h>
+
+
 
 
 using namespace std;
@@ -21,13 +26,12 @@ using namespace std;
 #define BUFFER_LENGTH 1024
 #define MSGHDRSIZE 8
 #define BUF_LEN 512
+#define MAX_RESULT 256
 
 /* Types of Messages */
 typedef enum
 {
 	REQ_GET = 1,
-	REQ_PUT = 2,
-	REQ_LIST = 3
 
 } Type;
 
@@ -104,9 +108,6 @@ class UdpClient
 
 		Msg * msg_ptr;
 
-		/*Reference from Jason Chen*/
-		Msg* msgGetResponse(SOCKET, struct sockaddr_in);		/* Gets a response message */
-		Msg* createClientHandshake();
 
 	public:
 		UdpClient(); 
@@ -115,9 +116,11 @@ class UdpClient
 		void list();
 		void getDataOperation();			/* Retrieves the file from Server */
 		void putDataOperation();            /*Upload data to server*/
+		void listOperation();                /*Get the directory*/
 		void showMenu();				/* Displays the list of available options for User */
 		void startClient();				/* Starts the client process */
 		void threeWayHandShake();       /*Start three way hand shake with server*/
+
 
 		int msgsendto(int ,Msg * );		/* Sends the packed message to server */
 		unsigned long ResolveName(string name);	/* Resolve the specified host name */
