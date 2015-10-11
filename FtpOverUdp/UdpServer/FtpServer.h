@@ -15,6 +15,7 @@
 #define MAXPENDING 10
 #define MSGHDRSIZE 12
 #define SEQUENCE_RANGE 2
+#define TRACE 1
 
 #include <queue>
 
@@ -70,9 +71,9 @@ class FtpServer
 		struct sockaddr_in ClientAddr;			/* Client address */
 		struct sockaddr_in ServerAddr;			/* Server address */
 		unsigned short ServerPort;				/* Server port */
-		unsigned short nextServerPort;			/* Socket for next worker thread */
 		int clientLen;							/* Length of Server address data structure */
 		char serverName[HOSTNAME_LENGTH];		/* Server Name */
+		void log(const std::string &logItem);	/* */
 
 	public:
 		FtpServer();
@@ -86,7 +87,6 @@ class FtpThread : public Thread
 	private:
 		// Fields
 		int serverIdentifier;							/* Random number to identify the server in the 3-way handshake */
-		int inPort;										/* Initial, server-wide socket */
 		ThreadState currentState;						/* Indicates the current state of the server, as defined by the requests received */
 		SOCKET thrdSock;								/* Thread-specific socket */
 		struct sockaddr_in addr;						/* Address */
@@ -105,13 +105,14 @@ class FtpThread : public Thread
 		bool isHandshakeCompleted();					/* Determines whether the final handshake message is addressed to the correct server */
 		bool tryLoadFile();								/* Retrieves the file in curRqt, if possible. Returns true if the file is found & loaded, or false otherwise. */
 		void loadDirectoryContents();					/*  */
+		void log(const std::string &logItem);	/* */
 
 		// Message creation
 		Msg* createServerHandshake();					/* Send 2nd handshake */
 		Msg* getNextChunk();							/* Wraps the current payload inside a Msg object */
 		Msg* getErrorMessage(const char*);				/* Wraps an error message inside a Msg object */
 	public:
-		FtpThread(int serverPort):inPort(serverPort) { srand(time(NULL)); curRqt = NULL; serverIdentifier = rand(); filesDirectory = "files\\"; currentState = Initialized; }
+		FtpThread() { srand(time(NULL)); curRqt = NULL; serverIdentifier = rand() % 256; filesDirectory = "serverFiles\\"; currentState = Initialized; }
 		void listen(int, struct sockaddr_in);			/* Receives the handshake */
 		virtual void run();								/* Starts the thread for every client request */
 };

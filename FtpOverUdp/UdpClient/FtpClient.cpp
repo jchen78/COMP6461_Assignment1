@@ -112,8 +112,10 @@ void FtpClient::performGet()
 	/* Send the packed message */
 
 	Msg* serverMsg = msgGet();
-	ofstream myFile (fileName, ios::out | ios::binary);
+	string fileInPath = string("clientFiles\\").append(fileName);
+	ofstream myFile(fileInPath, ios::out | ios::binary);
 	while (serverMsg->type != RESP_ERR) {
+		log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg->sequenceNumber)));
 		myFile.write (serverMsg->buffer, serverMsg->length);
 		setAckMessage(serverMsg);
 		delete serverMsg;
@@ -122,24 +124,27 @@ void FtpClient::performGet()
 		serverMsg = msgGet();
 	}
 
-	if(strcmp(serverMsg->buffer, "End of file.") == 0) {
+	if(strcmp(serverMsg->buffer, "End of file.") == 0)
 		cout << "File received "<< endl << endl;
-		myFile.close();
-	} else {
-		cout << serverMsg->buffer << endl;
-		myFile.close();
-		remove(fileName.c_str());
-	}
+	else
+		cout << serverMsg->buffer << endl << endl;
+
+	myFile.close();
+	remove(fileName.c_str());
 }
 
 void FtpClient::performList()
 {
+	cout << endl << endl << "Listing directory contents" << endl;
+	cout << "==================================================================" << endl;
+
 	sendMsg.type = REQ_LIST;
 	sendMsg.length = 0;
 	msgSend(&sendMsg);
 
 	Msg* serverMsg = msgGet();
 	while (serverMsg->type != RESP_ERR) {
+		log(string("Received response with sequence number ").append(to_string((_ULonglong)serverMsg->sequenceNumber)));
 		char* currentBuffer = serverMsg->buffer;
 		for (int i = 0; i < serverMsg->length; i++)
 			if (currentBuffer[i] == '\0')
@@ -155,7 +160,8 @@ void FtpClient::performList()
 	}
 
 	if(strcmp(serverMsg->buffer, "End of file.") == 0) {
-		cout << endl << endl << "End of directory listing" << endl << endl;
+		cout << endl << endl << "End of directory listing" << endl;
+		cout << "==================================================================" << endl << endl;
 	}
 }
 
@@ -169,6 +175,13 @@ void FtpClient::terminate()
 	Sleep(250);
 
 	exit(0);
+}
+
+void FtpClient::log(const std::string &logItem)
+{
+	FILE *logFile = fopen("logfile.txt", "a");
+	fprintf(logFile, "Client (%d): %s\r\n", clientIdentifier, logItem.c_str());
+	fclose(logFile);
 }
 
 void FtpClient::setAckMessage(Msg* previousPart)
@@ -286,6 +299,7 @@ bool FtpClient::performHandshake()
 
 	struct sockaddr_in newServer;
 	Msg* reply = msgGet();
+	log(string("Received handshake from server. Message: ").append(reply->buffer));
 	delete request;
 
 	request = processFinalHandshakeMessage(reply);

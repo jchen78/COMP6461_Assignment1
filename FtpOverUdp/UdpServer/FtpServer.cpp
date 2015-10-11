@@ -28,7 +28,6 @@ using namespace std;
  */
 FtpServer::FtpServer()
 {
-	nextServerPort = REQUEST_PORT + 1;
 	WSADATA wsadata;
 	/* Initialize Windows Socket information */
 	if (WSAStartup(0x0202,&wsadata)!=0)
@@ -45,6 +44,7 @@ FtpServer::FtpServer()
 	}
 
 	cout << "Server: " << serverName << " waiting to be contacted for get/put request..." << endl;
+	log(string("Starting up on host ").append(serverName));
 
 	/* Socket Creation */
 	if ((serverSock = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
@@ -66,6 +66,8 @@ FtpServer::FtpServer()
 		cerr << "Socket Binding Error from FtpServer,exit" << endl;
 		exit(1);
 	}
+
+	log(string("Bound to port ").append(to_string((_ULonglong)ServerPort)));
 }
 
 /**
@@ -90,7 +92,7 @@ void FtpServer::start()
 {
 	for (;;) /* Run forever */
 	{
-		FtpThread * pt = new FtpThread(nextServerPort++);
+		FtpThread * pt = new FtpThread();
 		
 		// Wait for a request
 		pt->listen(serverSock, ServerAddr);
@@ -98,6 +100,13 @@ void FtpServer::start()
 		// Once request has arrived, start new thread so that server may receive another request
 		pt-> start();
 	}
+}
+
+void FtpServer::log(const std::string &logItem)
+{
+	FILE *logFile = fopen("logfile.txt", "a");
+	fprintf(logFile, "Server (root): %s\r\n", logItem.c_str());
+	fclose(logFile);
 }
 
 /*-------------------------------FtpThread Class--------------------------------*/
@@ -109,6 +118,8 @@ void FtpServer::start()
  */
 void FtpThread::listen(int sock, struct sockaddr_in initialSocket)
 {
+	log(string("Waiting to start new connection. Identifier: ").append(to_string((_ULonglong)serverIdentifier)));
+
 	/* Socket Creation */
 	if ((thrdSock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
 	{
@@ -119,7 +130,7 @@ void FtpThread::listen(int sock, struct sockaddr_in initialSocket)
 	memset(&addr, 0, sizeof(addr));
 	addr.sin_family = AF_INET;
 	addr.sin_addr.s_addr = INADDR_ANY;
-	addr.sin_port = htons(inPort);
+	addr.sin_port = htons(0);
 
 	/* Binding the server socket to the Port Number */
     if (::bind(thrdSock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
@@ -129,6 +140,13 @@ void FtpThread::listen(int sock, struct sockaddr_in initialSocket)
 	}
 
 	curRqt = msgGet(sock, initialSocket);
+}
+
+void FtpThread::log(const std::string &logItem)
+{
+	FILE *logFile = fopen("logfile.txt", "a");
+	fprintf(logFile, "Server (%d): %s\r\n", serverIdentifier, logItem.c_str());
+	fclose(logFile);
 }
 
 /**
@@ -212,17 +230,22 @@ void FtpThread::handleCurrentMessage()
 	
 	/* Check the type of operation and Construct the response and send to Client */
 	if (currentState == Initialized && curRqt->type == HANDSHAKE) {
+		log(string("Handshake started. Client identifier: ").append(curRqt->buffer));
 		reply = createServerHandshake();
 		currentState = HandshakeStarted;
 	} else if (currentState == HandshakeStarted && curRqt->type == COMPLETE_HANDSHAKE) {
+		log(string("Handshake complete message received. Server identifier: ").append(curRqt->buffer));
 		if (isHandshakeCompleted())
 			currentState = ReceivingRequest;
 	} else if (currentState == ReceivingRequest && curRqt->type == REQ_GET) {
+		log(string("File request received: ").append(curRqt->buffer));
 		reply = tryLoadFile() ? getNextChunk() : getErrorMessage("No such file.");
 	} else if (currentState == ReceivingRequest && curRqt->type == REQ_LIST) {
+		log(string("Directory listing request received: ").append(curRqt->buffer));
 		loadDirectoryContents();
 		reply = getNextChunk();
 	} else if (currentState == Sending && curRqt->type == PUT) {
+		log(string("Received ACK with sequence number ").append(to_string((_ULonglong)curRqt->sequenceNumber)));
 		if (curRqt->sequenceNumber == currentSequenceNumber && !payloadData.empty()) {
 			// Iterate
 			currentSequenceNumber = (currentSequenceNumber + 1) % SEQUENCE_RANGE;
@@ -230,14 +253,15 @@ void FtpThread::handleCurrentMessage()
 		}
 
 		reply = getNextChunk();
-	} else if (currentState == ReceivingRequest && curRqt->type == PUT) {
-		reply = curRqt->sequenceNumber == currentSequenceNumber ? getErrorMessage("EOF") : NULL;
 	} else if (currentState == ReceivingRequest && curRqt->type == TERMINATE)
 		currentState = Terminated;
 	else
 		cerr << "Invalid request header; ignored and waiting for next request" << endl;
 	
 	if (reply != NULL) {
+		if (reply->type == RESP)
+			log(string("sending response with sequence number ").append(to_string((_ULonglong)reply->sequenceNumber)));
+		
 		msgSend(thrdSock, reply);
 		delete reply;
 	}
@@ -296,13 +320,12 @@ void FtpThread::loadDirectoryContents()
 	// Code adapted from https://msdn.microsoft.com/en-us/library/windows/desktop/aa365200(v=vs.85).aspx
 	// Removed most of the error-checking --it is the responsibility of the person setting up the server to ensure that directories and files are set up correctly
     WIN32_FIND_DATA ffd;
-    size_t length_of_arg;
     HANDLE hFind = INVALID_HANDLE_VALUE;
 
 	char *buffer = new char[BUFFER_LENGTH];
 	int currIndex = 0;
 	memset(buffer, '\0', BUFFER_LENGTH);
-	hFind = FindFirstFile("files\\*", &ffd);
+	hFind = FindFirstFile(string(filesDirectory).append("*").c_str(), &ffd);
     do
     {
         if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
@@ -323,7 +346,9 @@ void FtpThread::loadDirectoryContents()
     }
     while (FindNextFile(hFind, &ffd) != 0);
 
-	payloadData.push(buffer);
+	if (currIndex > 0)
+		payloadData.push(buffer);
+	
 	finalPayloadLength = currIndex == 0 ? BUFFER_LENGTH : currIndex;
 }
 

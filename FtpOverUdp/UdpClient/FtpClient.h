@@ -22,6 +22,7 @@ using namespace std;
 #define RCV_BUFFER_SIZE 512
 #define MSGHDRSIZE 12
 #define SEQUENCE_RANGE 2
+#define TRACE 1
 
 /* Types of Messages */
 typedef enum
@@ -94,6 +95,8 @@ class FtpClient
 		void performGet();				/* Retrieves the file from Server */
 		void performList();
 		void terminate();
+
+		void log(const string &logItem);
 
 	public:
 		FtpClient();
