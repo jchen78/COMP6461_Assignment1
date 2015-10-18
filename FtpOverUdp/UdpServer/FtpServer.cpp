@@ -293,7 +293,7 @@ bool FtpThread::tryLoadFile()
 		queue<char*>().swap(payloadData);
 
 	ifstream fileToRead;
-	fileToRead.open(string(filesDirectory).append(curRqt->buffer));
+	fileToRead.open(string(filesDirectory).append(curRqt->buffer), ios::binary);
 	char* currentBuffer = NULL;
 	if (fileToRead.is_open()) {
 		while (!fileToRead.eof()) {
