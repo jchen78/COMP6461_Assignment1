@@ -14,28 +14,28 @@ private:
 	int numberOfPackets;
 	int payloadSize;
 	int currentWindowOrigin;
-	int currentWindowEnd;
 	class WorkerThread** currentWindow;
 	int socket;
 
 	void initializePayload(const char*, int);
 	void normalizeCurrentWindow();
 	void receiveAck();
-	void notifyPayloadComplete();
+	void finalizePayload();
 public:
 	ThreadedSender(int socket);
 	void send(const char *messageContents, int messageLength);
 	virtual ~ThreadedSender();
 };
 
-class WorkerThread : Thread
+class WorkerThread : public Thread
 {
 private:
 	int sourceSocket;
 	char *packetContents;
+	int packetLength;
+
 	void sendMsg();
 public:
-	WorkerThread() { } // Null-object by default
-	void initialize(int sendingSocket, char *packetContents);
+	WorkerThread(int sendingSocket, char *packetContents, int packetLength) { }
 	void run();
 };

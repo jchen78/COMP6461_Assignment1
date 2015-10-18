@@ -14,12 +14,11 @@ void ThreadedSender::send(const char* messageContents, int messageLength)
 	
 	do
 	{
-		// loop: normalize the current window
 		normalizeCurrentWindow();
 		receiveAck();
 	} while (currentWindowOrigin < numberOfPackets);
 
-	notifyPayloadComplete();
+	finalizePayload();
 }
 
 void ThreadedSender::initializePayload(const char* messageContents, int messageLength)
@@ -36,15 +35,21 @@ void ThreadedSender::initializePayload(const char* messageContents, int messageL
 		currentWindow[i] = NULL;
 
 	currentWindowOrigin = 0;
-	currentWindowEnd = WINDOW_SIZE - 1;
-	if (currentWindowEnd >= numberOfPackets)
-		currentWindowEnd = numberOfPackets - 1;
 }
 
 void ThreadedSender::normalizeCurrentWindow()
 {
 	// Assume the indices are correct and all expired workers are set to NULL;
 	// merely ensure that all slots in the current window are populated.
+	for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin + i < numberOfPackets; i++) {
+		int currentIndex = (currentWindowOrigin + i) % SEQUENCE_RANGE;
+		if (currentWindow[currentIndex] == NULL) {
+			int currentChar = currentIndex * BUFFER_SIZE;
+			int currentSize = currentIndex == (numberOfPackets - 1) ? (payloadSize - currentChar - 1) : BUFFER_SIZE;
+			currentWindow[currentIndex] = new WorkerThread(socket, &completePayload[currentChar], currentSize);
+			currentWindow[currentIndex]->start();
+		}
+	}
 }
 
 void ThreadedSender::receiveAck()
@@ -52,7 +57,7 @@ void ThreadedSender::receiveAck()
 	// must handle indices, and set the proper slots to NULL
 }
 
-void ThreadedSender::notifyPayloadComplete()
+void ThreadedSender::finalizePayload()
 {
 	// must also wait for an ACK before exiting.
 }
