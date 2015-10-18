@@ -104,8 +104,14 @@ void FtpServer::start()
 
 void FtpServer::log(const std::string &logItem)
 {
+	time_t rawtime;
+	struct tm * timeinfo;
+
+	time(&rawtime);
+	timeinfo = localtime(&rawtime);
+
 	FILE *logFile = fopen("logfile.txt", "a");
-	fprintf(logFile, "Server (root): %s\r\n", logItem.c_str());
+	fprintf(logFile, "Server (root): %s -- %s\r\n", logItem.c_str(), asctime(timeinfo));
 	fclose(logFile);
 }
 
@@ -144,8 +150,13 @@ void FtpThread::listen(int sock, struct sockaddr_in initialSocket)
 
 void FtpThread::log(const std::string &logItem)
 {
+	time_t rawtime;
+	struct tm * timeinfo;
+
+	time(&rawtime);
+	timeinfo = localtime(&rawtime);
 	FILE *logFile = fopen("logfile.txt", "a");
-	fprintf(logFile, "Server (%d): %s\r\n", serverIdentifier, logItem.c_str());
+	fprintf(logFile, "Server (%d):  %s --%s\r\n", serverIdentifier, logItem.c_str(), asctime(timeinfo));
 	fclose(logFile);
 }
 

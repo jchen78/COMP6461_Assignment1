@@ -21,12 +21,18 @@
     <ClInclude Include="FtpServer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ThreadedSender.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="Thread.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="FtpServer.cpp">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="ThreadedSender.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

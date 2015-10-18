@@ -179,8 +179,14 @@ void FtpClient::terminate()
 
 void FtpClient::log(const std::string &logItem)
 {
+	time_t rawtime;
+	struct tm * timeinfo;
+
+	time(&rawtime);
+	timeinfo = localtime(&rawtime);
+
 	FILE *logFile = fopen("logfile.txt", "a");
-	fprintf(logFile, "Client (%d): %s\r\n", clientIdentifier, logItem.c_str());
+	fprintf(logFile, "Client (%d): %s --%s\r\n", clientIdentifier, logItem.c_str(), asctime(timeinfo));
 	fclose(logFile);
 }
 
