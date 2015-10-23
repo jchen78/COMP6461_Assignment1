@@ -43,6 +43,7 @@
     <ClCompile>
       <WarningLevel>Level3</WarningLevel>
       <Optimization>Disabled</Optimization>
+      <PrecompiledHeader>NotUsing</PrecompiledHeader>
     </ClCompile>
     <Link>
       <GenerateDebugInformation>true</GenerateDebugInformation>
@@ -62,13 +63,16 @@
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
+    <ClInclude Include="Common.h" />
     <ClInclude Include="FtpServer.h" />
     <ClInclude Include="Thread.h" />
+    <ClInclude Include="ThreadedReceiver.h" />
     <ClInclude Include="ThreadedSender.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FtpServer.cpp" />
     <ClCompile Include="Thread.cpp" />
+    <ClCompile Include="ThreadedReceiver.cpp" />
     <ClCompile Include="ThreadedSender.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />

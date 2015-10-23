@@ -10,27 +10,13 @@
 #define RESP_LENGTH 40
 #define FILENAME_LENGTH 20
 #define REQUEST_PORT 5001
-#define BUFFER_LENGTH 256
 #define RCV_BUFFER_SIZE 512
 #define MAXPENDING 10
 #define MSGHDRSIZE 12
-#define SEQUENCE_RANGE 2
 #define TRACE 1
 
 #include <queue>
-
-/* Type of Messages */
-typedef enum
-{
-	HANDSHAKE = 1,
-	COMPLETE_HANDSHAKE = 2,
-	REQ_LIST = 5,
-	REQ_GET = 6,
-	RESP = 10,
-	RESP_ERR = 12,
-	PUT = 15,
-	TERMINATE = 20
-} Type;
+#include "ThreadedSender.h"
 
 typedef enum
 {
@@ -53,15 +39,6 @@ typedef struct
 {
 	char response[RESP_LENGTH];
 } Resp;
-
-/* Message format used for sending and receiving datas */
-typedef struct
-{
-	Type type;
-	int  length;
-	int  sequenceNumber;
-	char buffer[BUFFER_LENGTH];
-} Msg;
 
 /* FtpServer Class */
 class FtpServer
