@@ -126,29 +126,7 @@ void FtpClient::performGet()
 	
 
 	while (serverMsg->type != RESP_ERR) {
-		int sequenceNumber = serverMsg->sequenceNumber;
-		log(string("Received response with sequence number").append(to_string((_ULonglong)sequenceNumber)));
-		myFile.write(serverMsg->buffer, serverMsg->length);
-		
-		for (int i = 0; i <= 3; i++){
-			*currentWindow[i] = serverMsg->sequenceNumber;
-		}
-
-		int currentPayloadLength = serverMsg->length;
-		currentWindow[sequenceNumber] = new char[BUFFER_LENGTH];
-		memcpy(currentWindow[sequenceNumber], serverMsg->buffer, currentPayloadLength);
-		totalPayloadSize += currentPayloadLength; 
-
-		if (currentWindow[0] != ""){
-
-		}
-
-		setAckMessage(serverMsg);
-		delete serverMsg;
-
-		msgSend(&sendMsg);
-		serverMsg = msgGet();
-
+	
 
 
 	}
@@ -376,6 +354,63 @@ Msg* FtpClient::processFinalHandshakeMessage(Msg *serverHandshake)
 
 	return request;
 }
+
+
+/** PUT
+* Normalize
+* Usage: Normalize the data structure
+*
+* @arg: void
+
+char currentBuffer[256];
+void normalize(char send_buf[WINDOW_SIZE][256], int sent_num)
+{
+	int position = 0;
+	int num = 2, i = (sent_num - 1) % WINDOW_SIZE;
+	memset(send_buf[i], 0, sizeof(send_buf));
+	send_buf[i][0] = '2';
+	send_buf[i][1] = sent_num;
+	while (currentBuffer[position] && (send_buf[i][num++] = currentBuffer[position++]) != ' ');
+	send_buf[i][num] = '\0';
+}
+*/
+
+/** PUT
+* Send data
+* Usage: Perform sent data in selective repeat protocol 
+*
+* @arg: int
+
+int FtpClient::send_data(char send_buf[WINDOW_SIZE][256], int max_recv, int &max_sent, int max_num)
+{
+	while (max_sent<(max_recv + WINDOW_SIZE) && max_sent<max_num){
+		++max_sent;
+		normalize(send_buf, max_sent);
+		cout << "正在发送第" << max_sent << "帧数据:" << &send_buf[(max_sent - 1) % WINDOW_SIZE][2] << "中……" << endl;
+		if (sendto(s, send_buf[(max_sent - 1) % WINDOW_SIZE], strlen(send_buf[(max_sent - 1) % WINDOW_SIZE]), 0, (LPSOCKADDR)&ser, sizeof(sockaddr)) == SOCKET_ERROR)
+			cout << "出错：发送失败(sendto():" << WSAGetLastError() << ")" << endl;
+		Sleep(500);
+	}
+	return 1;
+}
+*/
+
+
+/** PUT
+* Selective repeat
+* Usage: Selective repeat protocol
+*
+* @arg: int
+
+int FtpClient::selective_repeat(char send_buf[WINDOW_SIZE][256], int cur_sent)
+{
+	int num = (cur_sent - 1) % WINDOW_SIZE;
+	cout << "Resending Frame" << cur_sent << ":" << &send_buf[num][2] << "..." << endl;
+	while (sendto(s, send_buf[num], strlen(send_buf[num]), 0, (LPSOCKADDR)&clientSock, sizeof(sockaddr)) == SOCKET_ERROR)
+		cout << "Error,fail to sent(sendto():" << WSAGetLastError() << ")" << endl;
+	return 1;
+}
+*/
 
 /**
 * Destructor - ~FtpClient
