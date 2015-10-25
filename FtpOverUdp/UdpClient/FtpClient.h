@@ -10,29 +10,32 @@
 #include <string>
 #include <fstream>
 #include <climits>
-#include <stdio.h>
-#include <stdlib.h>
-#include <Windows.h>
-
-
-
+#include <windows.h>
 
 using namespace std;
 
 #pragma comment(lib, "Ws2_32.lib")
 #define HOSTNAME_LENGTH 20
 #define FILENAME_LENGTH 20
-#define REQUEST_PORT 5001
-#define BUFFER_LENGTH 1024
-#define MSGHDRSIZE 8
-#define BUF_LEN 512
-#define MAX_RESULT 256
+#define HANDSHAKE_PORT 5001
+#define BUFFER_LENGTH 256
+#define RCV_BUFFER_SIZE 512
+#define MSGHDRSIZE 12
+#define SEQUENCE_RANGE 7
+#define WINDOW_SIZE 3
+#define TRACE 1
 
 /* Types of Messages */
 typedef enum
 {
-	REQ_GET = 1,
-
+	HANDSHAKE = 1,
+	COMPLETE_HANDSHAKE = 2,
+	REQ_LIST = 5,
+	REQ_GET = 6,
+	RESP = 10,
+	RESP_ERR = 12,
+	PUT = 15,
+	TERMINATE = 20
 } Type;
 
 /* Structure of Request */
@@ -40,7 +43,7 @@ typedef struct
 {
 	char hostname[HOSTNAME_LENGTH];
 	char filename[FILENAME_LENGTH];
-} Req;  
+} Req;
 
 /* Buffer for uploading file contents */
 typedef struct
@@ -53,78 +56,57 @@ typedef struct
 {
 	Type type;
 	int  length; /* length of effective bytes in the buffer */
+	int  sequenceNumber;
 	char buffer[BUFFER_LENGTH];
 	char dataBuffer[BUFFER_LENGTH];
-	int  ACK;
-	
-} Msg; 
+} Msg;
 
-/* UdpClient Class */
-class UdpClient
+/* FtpClient Class */
+class FtpClient
 {
-	private:
-		int clientHandShakeSock, clientSock;        /* Hand shake Socket descriptor and data transport Socket descriptor */
-		 					
-		int syn;
-		int ack;
-		int sequenceNumber;
+private:
+	int clientSock;					/* Socket descriptor */
+	int clientPort;					/*  */
+	int clientIdentifier;
+	int serverIdentifier;
+	int sequenceNumber;
+	struct sockaddr_in ServAddr;	/* Server socket address */
+	unsigned short ServPort;		/* Server port */
+	unsigned short ClientPort;		/* Client port */
+	char hostName[HOSTNAME_LENGTH];	/* Host Name */
+	Req reqMessage;					/* Variable to store Request Message */
+	Msg sendMsg, receiveMsg;			/* Message structure variables for Sending and Receiving data */
+	WSADATA wsaData;				/* Variable to store socket information */
+	string serverName;				/* Variable to store Server IP Address */
+	string transferType;			/* Variable to store the Type of Operation */
+	int numBytesSent;				/* Variable to store the bytes of data sent to the server */
+	int numBytesRecv;				/* Variable to store the bytes of data received from the server */
+	int bufferSize;					/* Variable to specify the buffer size */
+	bool connectionStatus;			/* Variable to specify the status of the socket connection */
+	char *currentWindow[WINDOW_SIZE]; /*Store received ack*/
+	int expextedSequence;
+	int totalPayloadSize; 
 
-		char handShakeBuffer[BUFFER_LENGTH];      /*Storage the hand shake */
-		
-		char *handShakeMessage[BUFFER_LENGTH];  /*Hand shake message*/
-		
-		int addrLength = sizeof(ServAddr);
+	Msg* msgGet();
+	int msgSend(Msg *);				/* Sends the packed message to server */
 
-		struct sockaddr_in ServAddr;	/* Server socket address */
-		unsigned short ServPort;		/* Server port */
-		char hostName[HOSTNAME_LENGTH];	/* Host Name */
-		Req reqMessage;					/* Variable to store Request Message */
-		Msg sendtoMsg,receiveMsg;			/* Message structure variables for Sending and Receiving data */
-		WSADATA wsaData;				/* Variable to store socket information */
-		string serverIpAdd;				/* Variable to store Server IP Address */
-		string transferType;			/* Variable to store the Type of Operation */
-		string fileName;				/* Variable to store name of the file for retrieval or transfer */
-		int numBytesSent;				/* Variable to store the bytes of data sent to the server */
-		int numBytesRecvfrom;				/* Variable to store the bytes of data received from the server */
-		int bufferSize;					/* Variable to specify the buffer size */
-		bool connectionStatus;			/* Variable to specify the status of the socket connection */
-	
+	bool performHandshake();		/* Initiates and completes 3-way handshake w/ the server */
+	Msg* getInitialHandshakeMessage();
+	Msg* processFinalHandshakeMessage(Msg*);
 
-		typedef struct
-		{
-			int ID;
-			BYTE lparam[BUF_LEN * 2];
-		}COMMAND;
+	void setAckMessage(Msg*);
 
-		typedef struct
-		{
-			char FileName[MAX_PATH];//260byte  
-			int FileLen;
-			char Time[50];
-			BOOL IsDir;
-			BOOL Error;
-			HICON hIcon;
-		}FILEINFO;
+	void performGet();				/* Retrieves the file from Server */
+	void performList();
+	void terminate();
 
-		Msg * msg_ptr;
+	void log(const string &logItem);
 
 
-	public:
-		UdpClient(); 
-		void get();						/* Invokes the appropriate function based on selected option */
-		void put();
-		void list();
-		void getDataOperation();			/* Retrieves the file from Server */
-		void putDataOperation();            /*Upload data to server*/
-		void listOperation();                /*Get the directory*/
-		void showMenu();				/* Displays the list of available options for User */
-		void startClient();				/* Starts the client process */
-		void threeWayHandShake();       /*Start three way hand shake with server*/
-
-
-		int msgsendto(int ,Msg * );		/* Sends the packed message to server */
-		unsigned long ResolveName(string name);	/* Resolve the specified host name */
-		~UdpClient();		
-
-		
+public:
+	FtpClient();
+	void showMenu();				/* Displays the list of available options for User */
+	bool startClient();				/* Starts the client process . Returns true if client has successfully completed the handshake, or false otherwise.*/
+	unsigned long ResolveName(string name);	/* Resolve the specified host name */
+	~FtpClient();
 };
