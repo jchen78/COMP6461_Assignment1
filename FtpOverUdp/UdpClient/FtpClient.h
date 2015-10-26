@@ -86,6 +86,11 @@ private:
 	char *currentWindow[WINDOW_SIZE]; /*Store received ack*/
 	int expextedSequence;
 	int totalPayloadSize; 
+	char buff[WINDOW_SIZE][256];
+	char networklayer_buff[10][256];
+	char send_mes[3];
+	char buffer[BUFFER_LENGTH];
+	
 
 	Msg* msgGet();
 	int msgSend(Msg *);				/* Sends the packed message to server */
@@ -93,6 +98,9 @@ private:
 	bool performHandshake();		/* Initiates and completes 3-way handshake w/ the server */
 	Msg* getInitialHandshakeMessage();
 	Msg* processFinalHandshakeMessage(Msg*);
+	int selective_repeat(char send_buf[WINDOW_SIZE][256], int cur_sent);
+	int FtpClient::checkWindow(int& last_num, sockaddr_in sa_last, int t);
+	int FtpClient::send_data(char send_mes[3], int flag, int last_num);
 
 	void setAckMessage(Msg*);
 
