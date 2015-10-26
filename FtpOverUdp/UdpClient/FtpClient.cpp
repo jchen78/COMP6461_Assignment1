@@ -8,9 +8,10 @@
 #include <stdlib.h>
 using namespace std;
 
+/* Can not introduce once introduced cout error exception "cout is ambiguous"
 int TIMEOUT_USEC = 300;
 struct timeval timeout = { 0, 300 };
-
+*/
 
 
 /**
@@ -114,21 +115,28 @@ void FtpClient::performGet()
 	}
 
 	cout << endl << endl << "Sent Request to " << serverName << ", Waiting... " << endl;
-
 	/* Send the packed message */
 
 	Msg* serverMsg = msgGet();
 	string fileInPath = string("clientFiles\\").append(fileName);
 	ofstream myFile(fileInPath, ios::out | ios::binary);
 
-	/*Initialize the window*/
-	expextedSequence = 0;
-	
-
+	int flag, last_num = 0, t = 1;
 	while (serverMsg->type != RESP_ERR) {
-	
+		/*Perform the receving window*/
+		do{
+			flag = checkWindow(last_num, ServAddr, t);
+			t++;
+			send_data(send_mes, flag, last_num);
+			memset(buffer, 0, 512);
+		} while (flag != 6);
+		/*log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg->sequenceNumber))); put the log into checkWindow()*/
+		myFile.write(serverMsg->buffer, serverMsg->length);
+		setAckMessage(serverMsg);
+		delete serverMsg;
 
-
+		msgSend(&sendMsg);
+		serverMsg = msgGet();
 	}
 
 	if (strcmp(serverMsg->buffer, "End of file.") == 0)
@@ -144,7 +152,83 @@ void FtpClient::performGet()
 }
 
 
+int FtpClient::checkWindow(int& last_num, sockaddr_in ServAddr, int t)
+{
+	char buffer[RCV_BUFFER_SIZE];
+	int addrLength = sizeof(ServAddr);
 
+	if (t % 5 != 0){
+		if (recvfrom(clientSock, buffer, sizeof(buffer), 0, (SOCKADDR *)&ServAddr, &addrLength) != SOCKET_ERROR){
+			if (!strcmp(inet_ntoa(ServAddr.sin_addr), inet_ntoa(ServAddr.sin_addr))){
+				int cur_num = buffer[1];
+				if (buffer[1] <= last_num){
+					cout << "Frame" << cur_num << "is duplicate,discarded..." << endl;
+					return 1;
+				}
+				else if (buffer[1] <= last_num + WINDOW_SIZE){
+					cout << "Frame" << cur_num << "has been received: " << &buffer[2] << endl;
+					strcpy(buff[(buffer[1] - 1) % WINDOW_SIZE], buffer);	
+
+					if (buffer[1] == last_num + 1){
+						while (strlen(buff[(last_num) % WINDOW_SIZE])){
+							strcpy(networklayer_buff[int(buff[(last_num) % WINDOW_SIZE][1]) - 1], &buff[(last_num) % WINDOW_SIZE][2]);
+							cout << "Previous frame" << last_num + 1 << "have been received" << endl << endl;
+							memset(buff[(last_num) % WINDOW_SIZE], 0, 256);
+							if (++last_num == total)
+								return 6;	
+						}
+						return 1;
+					}
+					else return 2;
+				}
+				cout << "Receiced frame" << cur_num << ",but Frame" << last_num + 1 << "lost.Discarded" << endl;
+				return 4;
+			}
+			else {
+				cout << "Reject sender" << inet_ntoa(ServAddr.sin_addr) << "'s data" << endl;
+				return 5;
+			}
+		}
+		else return 0;
+	}
+	else {
+		if (last_num + 1 <= total){
+			while (recvfrom(clientSock, buffer, sizeof(buffer), 0, (SOCKADDR *)&ServAddr, &addrLength) == SOCKET_ERROR);
+			cout << "Frame" << last_num + 1 << "lost" << endl;
+		}
+		return 0;
+	}
+}
+
+int FtpClient::send_data(char send_mes[3], int flag, int last_num)
+{
+	int addrLength = sizeof(ServAddr);
+	if (flag == 1 || flag == 6){
+		send_mes[0] = '0';
+		send_mes[1] = last_num;
+		send_mes[2] = '\0';
+	}
+	else if (flag == 5){
+		send_mes[0] = '4';
+		send_mes[1] = 0;
+		send_mes[2] = '\0';	
+	}
+
+	else if (!flag){
+		int i = last_num + 1;
+		send_mes[0] = '1';
+		send_mes[1] = i;
+		send_mes[2] = '\0';
+		
+		while (sendto(clientSock, send_mes, strlen(send_mes), 0, (SOCKADDR *)&ServAddr, addrLength) == SOCKET_ERROR)
+			cout << "Fail to send:" << WSAGetLastError() << endl << "Resend" << endl;
+		return 0;
+	}
+	while (sendto(clientSock, send_mes, strlen(send_mes), 0, (SOCKADDR *) & ServAddr, addrLength) == SOCKET_ERROR)
+		cout << "Fail to send" << WSAGetLastError() << endl << "resend。" << endl;
+
+	return flag;
+}
 
 void FtpClient::performList()
 {
@@ -356,6 +440,7 @@ Msg* FtpClient::processFinalHandshakeMessage(Msg *serverHandshake)
 }
 
 
+
 /** PUT
 * Normalize
 * Usage: Normalize the data structure
@@ -387,7 +472,7 @@ int FtpClient::send_data(char send_buf[WINDOW_SIZE][256], int max_recv, int &max
 		++max_sent;
 		normalize(send_buf, max_sent);
 		cout << "Sending Frame" << max_sent << ":" << &send_buf[(max_sent - 1) % WINDOW_SIZE][2] << "..." << endl;
-		if (sendto(s, send_buf[(max_sent - 1) % WINDOW_SIZE], strlen(send_buf[(max_sent - 1) % WINDOW_SIZE]), 0, (LPSOCKADDR)&ser, sizeof(sockaddr)) == SOCKET_ERROR)
+		if (sendto(s, send_buf[(max_sent - 1) % WINDOW_SIZE], strlen(send_buf[(max_sent - 1) % WINDOW_SIZE]), 0, (SOCKADDR *)&ser, sizeof(sockaddr)) == SOCKET_ERROR)
 			cout << "Error,fail to sent(sendto():" << WSAGetLastError() << ")" << endl;
 		Sleep(500);
 	}
@@ -406,7 +491,7 @@ int FtpClient::selective_repeat(char send_buf[WINDOW_SIZE][256], int cur_sent)
 {
 	int num = (cur_sent - 1) % WINDOW_SIZE;
 	cout << "Resending Frame" << cur_sent << ":" << &send_buf[num][2] << "..." << endl;
-	while (sendto(s, send_buf[num], strlen(send_buf[num]), 0, (LPSOCKADDR)&clientSock, sizeof(sockaddr)) == SOCKET_ERROR)
+	while (sendto(s, send_buf[num], strlen(send_buf[num]), 0, (SOCKADDR *)&clientSock, sizeof(sockaddr)) == SOCKET_ERROR)
 		cout << "Error,fail to sent(sendto():" << WSAGetLastError() << ")" << endl;
 	return 1;
 }
