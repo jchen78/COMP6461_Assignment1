@@ -386,9 +386,9 @@ int FtpClient::send_data(char send_buf[WINDOW_SIZE][256], int max_recv, int &max
 	while (max_sent<(max_recv + WINDOW_SIZE) && max_sent<max_num){
 		++max_sent;
 		normalize(send_buf, max_sent);
-		cout << "正在发送第" << max_sent << "帧数据:" << &send_buf[(max_sent - 1) % WINDOW_SIZE][2] << "中……" << endl;
+		cout << "Sending Frame" << max_sent << ":" << &send_buf[(max_sent - 1) % WINDOW_SIZE][2] << "..." << endl;
 		if (sendto(s, send_buf[(max_sent - 1) % WINDOW_SIZE], strlen(send_buf[(max_sent - 1) % WINDOW_SIZE]), 0, (LPSOCKADDR)&ser, sizeof(sockaddr)) == SOCKET_ERROR)
-			cout << "出错：发送失败(sendto():" << WSAGetLastError() << ")" << endl;
+			cout << "Error,fail to sent(sendto():" << WSAGetLastError() << ")" << endl;
 		Sleep(500);
 	}
 	return 1;
