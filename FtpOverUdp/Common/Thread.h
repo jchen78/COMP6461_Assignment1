@@ -1,3 +1,6 @@
+#define COMMON_API __declspec(dllexport)
+
+#pragma once
 /*************************************************************************************
 *								 File Name	: Thread.h		   			 	         *
 *								Usage : Used for threads creation                    *
@@ -8,18 +11,21 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <process.h>
+#include "Common.h"
 
 /* Define the Stack Size and define the methods for thread class */
 #define	STKSIZE	 16536
-class Thread
+
+namespace Common
 {
+	class COMMON_API Thread
+	{
 	public:
-		Thread()
-		{}
-		virtual ~Thread()
-		{}
-		static void * pthread_callback (void *ptrThis);		/* Thread creation */
-		virtual void run () = 0 ;							/* Start the Thread */
+		Thread() {}
+		static void * pthread_callback(void *ptrThis);		/* Thread creation */
+		virtual void run() = 0;
 		void  start();										/* Thread initialization*/
-};
+	};
+}
+
 #endif

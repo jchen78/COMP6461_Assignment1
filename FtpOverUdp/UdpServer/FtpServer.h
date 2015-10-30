@@ -5,7 +5,6 @@
 #ifndef SER_TCP_H
 #define SER_TCP_H
 
-#pragma comment(lib, "Ws2_32.lib")
 #define HOSTNAME_LENGTH 20
 #define RESP_LENGTH 40
 #define FILENAME_LENGTH 20
@@ -16,7 +15,8 @@
 #define TRACE 1
 
 #include <queue>
-#include "ThreadedSender.h"
+#include <Common.h>
+#include <Thread.h>
 
 typedef enum
 {
@@ -59,7 +59,7 @@ class FtpServer
 };
 
 /* FtpThread Class */
-class FtpThread : public Thread
+class FtpThread : public Common::Thread
 {
 	private:
 		// Fields
@@ -89,7 +89,7 @@ class FtpThread : public Thread
 		Msg* getNextChunk();							/* Wraps the current payload inside a Msg object */
 		Msg* getErrorMessage(const char*);				/* Wraps an error message inside a Msg object */
 	public:
-		FtpThread() { srand(time(NULL)); curRqt = NULL; serverIdentifier = rand() % 256; filesDirectory = "serverFiles\\"; currentState = Initialized; }
+		FtpThread() { srand(time(NULL)); curRqt = NULL; serverIdentifier = rand() % HOSTID_RANGE; filesDirectory = "serverFiles\\"; currentState = Initialized; }
 		void listen(int, struct sockaddr_in);			/* Receives the handshake */
 		virtual void run();								/* Starts the thread for every client request */
 };

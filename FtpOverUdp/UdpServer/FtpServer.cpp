@@ -14,7 +14,6 @@
 #include <vector>
 #include <fstream>
 #include <process.h>
-#include "Thread.h"
 #include "FtpServer.h"
 #include <stdlib.h>
 
@@ -90,7 +89,7 @@ FtpServer::~FtpServer()
  */
 void FtpServer::start()
 {
-	for (;;) /* Run forever */
+	while (true) /* Run forever */
 	{
 		FtpThread * pt = new FtpThread();
 		
