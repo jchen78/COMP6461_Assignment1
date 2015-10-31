@@ -11,12 +11,15 @@
 #define REQUEST_PORT 5001
 #define RCV_BUFFER_SIZE 512
 #define MAXPENDING 10
-#define MSGHDRSIZE 12
 #define TRACE 1
 
 #include <queue>
+#include <mutex>
 #include <Common.h>
+#include <Sender.h>
 #include <Thread.h>
+
+using namespace Common;
 
 typedef enum
 {
@@ -50,48 +53,127 @@ class FtpServer
 		unsigned short ServerPort;				/* Server port */
 		int clientLen;							/* Length of Server address data structure */
 		char serverName[HOSTNAME_LENGTH];		/* Server Name */
-		void log(const std::string &logItem);	/* */
+		char* filesDirectory;
 
+		void log(const std::string &logItem);	/* */
 	public:
 		FtpServer();
 		~FtpServer();
 		void start();							/* Starts the FtpServer */
 };
 
-/* FtpThread Class */
-class FtpThread : public Common::Thread
-{
-	private:
-		// Fields
-		int serverIdentifier;							/* Random number to identify the server in the 3-way handshake */
-		ThreadState currentState;						/* Indicates the current state of the server, as defined by the requests received */
-		SOCKET thrdSock;								/* Thread-specific socket */
-		struct sockaddr_in addr;						/* Address */
-		struct sockaddr_in clientAddr;					/* Client address */
-		int addrLength;									/* Length of addr field */
-		int currentSequenceNumber;						/* The sequence number (updated AFTER processing each request, as required) */
-		std::string filesDirectory;						/* */
-		std::queue<char*> payloadData;					/* The data to be sent. Until ACK is received, the previously sent chunk is kept at the top. */
-		int finalPayloadLength;							
-		Msg* curRqt;									/* The latest received request */
-		
-		// Methods
-		Msg* msgGet(SOCKET, struct sockaddr_in);		/* Gets a request message */
-		void handleCurrentMessage();					/* Decide what response (if any) is appropriate. */
-		int msgSend(int , Msg*);						/* Send the response */
-		bool isHandshakeCompleted();					/* Determines whether the final handshake message is addressed to the correct server */
-		bool tryLoadFile();								/* Retrieves the file in curRqt, if possible. Returns true if the file is found & loaded, or false otherwise. */
-		void loadDirectoryContents();					/*  */
-		void log(const std::string &logItem);	/* */
+typedef enum {
+	INITIALIZING,
+	HANDSHAKING,
+	WAITING_FOR_REQUEST,
+	SENDING,
+	RECEIVING,
+	RENAMING,
+	EXITING
+} ServerState;
 
-		// Message creation
-		Msg* createServerHandshake();					/* Send 2nd handshake */
-		Msg* getNextChunk();							/* Wraps the current payload inside a Msg object */
-		Msg* getErrorMessage(const char*);				/* Wraps an error message inside a Msg object */
-	public:
-		FtpThread() { srand(time(NULL)); curRqt = NULL; serverIdentifier = rand() % HOSTID_RANGE; filesDirectory = "serverFiles\\"; currentState = Initialized; }
-		void listen(int, struct sockaddr_in);			/* Receives the handshake */
-		virtual void run();								/* Starts the thread for every client request */
+class ServerThread : public Thread
+{
+private:
+	int serverId;
+	int socket;
+	struct sockaddr_in address;
+	char* filesDirectory;
+
+	ServerState currentState;
+	class std::mutex sync;
+	class Msg* currentMsg;
+	class Sender* sender;
+	std::string originalFileName;
+	SenderThread* currentResponse;
+	bool* isResponseComplete;
+
+	void startHandshake();
+	void endHandshake();
+	void sendList();
+	char* getDirectoryContents();
+	void sendFile();
+	char* getFileContents(const char* fileName);
+	void setSender(const char* contents);
+public:
+	ServerThread(int serverSocket, struct sockaddr_in serverAddress, Msg* initialHandshake);
+	int getId();
+	std::mutex* getSync();
+	virtual void run();
+	/* Switch by current state, msg type & misc. conditions (in order):
+	*		- If state is Initializing & message is Handshake (impossible for other message states):
+	*			- Set state to Handshaking
+	*			- Send HANDSHAKE (done)
+	*		- If state is Handshaking & msg is CompleteHandshake:
+	*			- Stop sending HANDSHAKE
+	*			- Set state to WaitingForRequest
+	*		- If state is Handshaking & msg is any:
+	*			- Send HANDSHAKE (do not bother with sequence number: could be randomly correct)
+	*		- If state is WaitingForRequest & message is GetList:
+	*			- Set state to Sending
+	*			- Initialize Sender field
+	*			- Start Sender
+	*		- If state is WaitingForRequest & message is invalid GetFile:
+	*			- Send RESP_ERR
+	*		- If state is WaitingForRequest & message is valid GetFile:
+	*			- Set state to Sending
+	*			- Initialize Sender field
+	*			- Start Sender
+	*		- If state is WaitingForRequest & message is Put:
+	*			- Set state to Receiving
+	*			- Initialize (as yet not-coded) Receiver field
+	*			- Start Receiver
+	*			- Send ACK
+	*		- If state is WaitingForRequest & message is invalid Post:
+	*			- Send RESP_ERR
+	*		- If state is WaitingForRequest & message is valid Post:
+	*			- Set state to Renaming
+	*			- Set originalFileName
+	*			- Send ACK
+	*		- If state is WaitingForRequest & message is Terminate w/out message body:
+	*			- Set state to Exiting
+	*			- Initialize exit timeout (3 delays, 2 duplicate TERMINATE responses)
+	*			- Send TERMINATE
+	*		- If state is WaitingForRequest & message is any:
+	*			- Send RESP_ERR
+	*		- If state is Sending & message is Ack:
+	*			- Dispatch msg to Sender field
+	*			- If Sender state is completed, set state to WaitingForRequest
+	*		- If state is Sending & message is any:
+	*			- Send RESP_ERR
+	*		- If state is Receiving & message is Resp:
+	*			- Dispatch to Receiver
+	*		- If state is Receiving & message is RespErr EOF:
+	*			- Set state to WaitingForRequest
+	*			- Dispatch to Receiver
+	*		- If state is Receiving & message is any:
+	*			- Send RESP_ERR
+	*		- If state is Renaming & message is Resp:
+	*			- If rename is successful:
+	*				- Set state to WaitingForRequest
+	*				- Send ACK
+	*			- Otherwise:
+	*				- Send RESP_ERR
+	*		- If state is Renaming & message is Terminate w/ originalFileName as message body:
+	*			- Set state to WaitingForRequest
+	*			- Clear originalFileName field
+	*			- Send ACK
+	*		- If state is Renaming & message is any:
+	*			- Send RESP_ERR
+	*		- If state is EXITING & message is ACK:
+	*			- Exit (no response)
+	*		- If state is EXITING & 3rd TERMINATE is sent (2nd duplicate TERMINATE):
+	*			- Exit (no response & no extra timeout)
+	*/
+	virtual ~ServerThread() {
+		sync.unlock();
+
+		if (currentMsg != NULL)
+			delete currentMsg;
+
+		if (sender != NULL)
+			delete sender;
+	}
 };
 
 #endif

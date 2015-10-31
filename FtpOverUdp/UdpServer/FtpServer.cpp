@@ -91,13 +91,19 @@ void FtpServer::start()
 {
 	while (true) /* Run forever */
 	{
-		FtpThread * pt = new FtpThread();
-		
-		// Wait for a request
-		pt->listen(serverSock, ServerAddr);
-
-		// Once request has arrived, start new thread so that server may receive another request
-		pt-> start();
+		/* For each message:
+		 *		- log the message
+		 *		- if the server-id does not correspond to any server thread:
+		 *			- log error
+		 *			- wait for next message (silently ignore the message)
+		 *		- if no server-id is given:
+		 *			- create a new server thread
+		 *			- update the message with the new server id
+		 *			- register the new server thread
+		 *		- retrieve the server thread
+		 *		- dispatch the message to the server thread
+		 *		- wait for next message
+		 */
 	}
 }
 
@@ -114,287 +120,175 @@ void FtpServer::log(const std::string &logItem)
 	fclose(logFile);
 }
 
-/*-------------------------------FtpThread Class--------------------------------*/
-/**
- * Function - listen
- * Usage: Blocks until incoming request message is captured
- *
- * @arg: void
- */
-void FtpThread::listen(int sock, struct sockaddr_in initialSocket)
+/*-------------------------------ServerThread Class--------------------------------*/
+ServerThread::ServerThread(int serverSocket, struct sockaddr_in serverAddress, Msg* initialHandshake)
 {
-	log(string("Waiting to start new connection. Identifier: ").append(to_string((_ULonglong)serverIdentifier)));
+	srand(time(NULL));
+	serverId = rand();
+	socket = serverSocket;
+	address = serverAddress;
+	currentState = INITIALIZING;
+	currentMsg = initialHandshake;
+	sender = NULL;
 
-	/* Socket Creation */
-	if ((thrdSock = socket(PF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
+	sync.lock();
+}
+
+int ServerThread::getId() { return serverId; }
+
+mutex* ServerThread::getSync() { return &sync; }
+
+void ServerThread::run()
+{
+	do // NOTE : currentMsg can only be null if the initial handshake is null, or ServerThread sets it to NULL.
 	{
-		std::cerr << "Socket Creation Error,exit" << endl;
-		exit(1);
-	}
-
-	memset(&addr, 0, sizeof(addr));
-	addr.sin_family = AF_INET;
-	addr.sin_addr.s_addr = INADDR_ANY;
-	addr.sin_port = htons(0);
-
-	/* Binding the server socket to the Port Number */
-    if (::bind(thrdSock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
-	{
-		cerr << "Socket Binding Error from FtpThread, exit" << endl;
-		exit(1);
-	}
-
-	curRqt = msgGet(sock, initialSocket);
-}
-
-void FtpThread::log(const std::string &logItem)
-{
-	time_t rawtime;
-	struct tm * timeinfo;
-
-	time(&rawtime);
-	timeinfo = localtime(&rawtime);
-	FILE *logFile = fopen("logfile.txt", "a");
-	fprintf(logFile, "Server (%d):  %s --%s\r\n", serverIdentifier, logItem.c_str(), asctime(timeinfo));
-	fclose(logFile);
-}
-
-/**
- * Function - msgGet
- * Usage: Blocks until the next incoming packet is completely received; returns the packet formatted as a message.
- *
- * @arg: socket, address
- */
-Msg* FtpThread::msgGet(SOCKET sock, struct sockaddr_in sockAddr)
-{
-	char buffer[RCV_BUFFER_SIZE];
-	int bufferLength;
-	clientAddr = sockAddr;
-	memcpy(clientAddr.sin_zero, sockAddr.sin_zero, 8);
-	addrLength = sizeof(addr);
-
-	/* Check the received Message Header */
-	if ((bufferLength = recvfrom(sock, buffer, RCV_BUFFER_SIZE, 0, (SOCKADDR *)&clientAddr, &addrLength)) == SOCKET_ERROR)
-	{
-		cerr << "recvfrom(...) failed when getting message" << endl;
-		cerr << WSAGetLastError() << endl;
-		exit(1);
-	}
-
-	// must destruct after use!
-	Msg* msg = new Msg();
-	memcpy(msg, buffer, MSGHDRSIZE);
-	memcpy(msg->buffer, buffer + MSGHDRSIZE, msg->length);
-	return msg;
-}
-
-/**
- * Function - msgSend
- * Usage: Returns the length of bytes in msg_ptr->buffer,which have been sent out successfully
- *
- * @arg: int, Msg *
- */
-int FtpThread::msgSend(int sock, Msg * msg_ptr)
-{
-	int n;
-	int expectedMsgLen = MSGHDRSIZE + msg_ptr->length;
-	if ((n = sendto(sock, (char *)msg_ptr, expectedMsgLen, 0, (SOCKADDR *)&clientAddr, addrLength)) != expectedMsgLen) {
-		std::cerr << "Send MSGHDRSIZE+length Error " << endl;
-		std::cerr << WSAGetLastError() << endl;
-		return(-1);
-	}
-
-	return (n-MSGHDRSIZE);
-}
-
-/**
- * Function - run
- * Usage: Initiates client-terminated looping
- *
- * @arg: void
- */
-void FtpThread::run()
-{
-	currentSequenceNumber = serverIdentifier % SEQUENCE_RANGE;
-	handleCurrentMessage();
-
-	while (currentState != Terminated) {
-		curRqt = msgGet(thrdSock, addr);
-		handleCurrentMessage();
-	}
-
-	/* Close the connection and unlock the Mutex after successful transfer */
-	closesocket(thrdSock);
-}
-
-void FtpThread::handleCurrentMessage()
-{
-	/*Start receiving the request */
-	if (curRqt == NULL)
-	{
-		cerr << "Receive Req error,exit " << endl;
-		return;
-	}
-
-	Msg* reply = NULL;
-	
-	/* Check the type of operation and Construct the response and send to Client */
-	if (currentState == Initialized && curRqt->type == HANDSHAKE) {
-		log(string("Handshake started. Client identifier: ").append(curRqt->buffer));
-		reply = createServerHandshake();
-		currentState = HandshakeStarted;
-	} else if (currentState == HandshakeStarted && curRqt->type == COMPLETE_HANDSHAKE) {
-		log(string("Handshake complete message received. Server identifier: ").append(curRqt->buffer));
-		if (isHandshakeCompleted())
-			currentState = ReceivingRequest;
-	} else if (currentState == ReceivingRequest && curRqt->type == REQ_GET) {
-		log(string("File request received: ").append(curRqt->buffer));
-		reply = tryLoadFile() ? getNextChunk() : getErrorMessage("No such file.");
-	} else if (currentState == ReceivingRequest && curRqt->type == REQ_LIST) {
-		log(string("Directory listing request received: ").append(curRqt->buffer));
-		loadDirectoryContents();
-		reply = getNextChunk();
-	} else if (currentState == Sending && curRqt->type == PUT) {
-		log(string("Received ACK with sequence number ").append(to_string((_ULonglong)curRqt->sequenceNumber)));
-		if (curRqt->sequenceNumber == currentSequenceNumber && !payloadData.empty()) {
-			// Iterate
-			currentSequenceNumber = (currentSequenceNumber + 1) % SEQUENCE_RANGE;
-			payloadData.pop(); // TODO: Manage memory?
+		switch (currentState) {
+		case INITIALIZING:
+			startHandshake();
+			break;
+		case HANDSHAKING:
+			if (currentMsg->type == COMPLETE_HANDSHAKE)
+				endHandshake();
+			// TODO: Send RESP_ERR
+			break;
+		case WAITING_FOR_REQUEST:
+			switch (currentMsg->type) {
+			case GET_LIST:
+				sendList();
+				break;
+			case GET_FILE:
+				sendFile();
+				break;
+			case PUT:
+				// TODO: Complete action
+				break;
+			case POST:
+				// TODO: Complete action
+				break;
+			default:
+				// TODO: Send RESP_ERR
+				break;
+			}
+			break;
+		case SENDING:
+			if (currentMsg->type == ACK) {
+				// TODO: Complete action
+			} else {
+				// TODO: Send RESP_ERR
+			}
+			break;
+		case RECEIVING:
+			if (currentMsg->type == RESP) {
+				// TODO: Complete action
+			} else if (currentMsg->type == RESP_ERR && strcmp(currentMsg->buffer, "End of file.") == 0) {
+				// TODO: Complete action
+			} else {
+				// TODO: Send RESP_ERR
+			}
+			break;
+		case RENAMING:
+			if (currentMsg->type == RESP) {
+				// TODO: Complete action
+			} else if (currentMsg->type == TERMINATE && strcmp(currentMsg->buffer, originalFileName.c_str()) == 0) {
+				// TODO: Complete action
+			} else {
+				// TODO: Send RESP_ERR
+			}
+			break;
+		case EXITING:
+			if (currentMsg->type == ACK) {
+				// TODO: Complete action (incl. set currentMsg to null)
+			} else {
+				// TODO: Send RESP_ERR
+			}
+			break;
 		}
 
-		reply = getNextChunk();
-	} else if (currentState == ReceivingRequest && curRqt->type == TERMINATE)
-		currentState = Terminated;
-	else
-		cerr << "Invalid request header; ignored and waiting for next request" << endl;
-	
-	if (reply != NULL) {
-		if (reply->type == RESP)
-			log(string("sending response with sequence number ").append(to_string((_ULonglong)reply->sequenceNumber)));
-		
-		msgSend(thrdSock, reply);
-		delete reply;
-	}
+		sync.lock();
+	} while (currentMsg != NULL);
 }
 
-Msg* FtpThread::createServerHandshake()
+void ServerThread::startHandshake()
 {
-	Msg* handshakeAck = new Msg(*curRqt);
-	int lenClientData = 0;
-	while (isdigit(handshakeAck->buffer[lenClientData]))
-		lenClientData++;
-	
-	std::string serverPart = ",";
-	serverPart += std::to_string((_ULonglong)serverIdentifier);
-	strcpy(&handshakeAck->buffer[lenClientData], serverPart.c_str());
-
-	return handshakeAck;
+	currentState = HANDSHAKING;
+	isResponseComplete = new bool(false);
+	currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, isResponseComplete, HANDSHAKE, 0, "", 0);
 }
 
-bool FtpThread::isHandshakeCompleted()
+void ServerThread::endHandshake()
 {
-	return std::stoi(curRqt->buffer) == serverIdentifier;
+	currentState = WAITING_FOR_REQUEST;
+	(*isResponseComplete) = true; // Will stop sending HANDSHAKE after timeout (SenderThread will auto-destroy)
+	currentResponse = NULL;
 }
 
-bool FtpThread::tryLoadFile()
+void ServerThread::sendList()
 {
-	// Empties out any data which may be remaining in the queue, if any
-	if (!payloadData.empty())
-		queue<char*>().swap(payloadData);
-
-	ifstream fileToRead;
-	fileToRead.open(string(filesDirectory).append(curRqt->buffer), ios::binary);
-	char* currentBuffer = NULL;
-	if (fileToRead.is_open()) {
-		while (!fileToRead.eof()) {
-			currentBuffer = new char[BUFFER_LENGTH];
-			memset(currentBuffer, '\0', BUFFER_LENGTH);
-			fileToRead.read(currentBuffer, BUFFER_LENGTH);
-
-			payloadData.push(currentBuffer);
-		}
-
-		finalPayloadLength = fileToRead.gcount();
-		return true;
-	}
-
-	return false;
+	currentState = SENDING;
+	setSender(getDirectoryContents());
 }
 
-void FtpThread::loadDirectoryContents()
+char* ServerThread::getDirectoryContents()
 {
-	// Empties out any data which may be remaining in the queue, if any
-	if (!payloadData.empty())
-		queue<char*>().swap(payloadData);
-
+	queue<char*> payloadData;
+	int payloadLength = 0;
 	// Code adapted from https://msdn.microsoft.com/en-us/library/windows/desktop/aa365200(v=vs.85).aspx
 	// Removed most of the error-checking --it is the responsibility of the person setting up the server to ensure that directories and files are set up correctly
-    WIN32_FIND_DATA ffd;
-    HANDLE hFind = INVALID_HANDLE_VALUE;
+	WIN32_FIND_DATA ffd;
+	HANDLE hFind = INVALID_HANDLE_VALUE;
 
-	char *buffer = new char[BUFFER_LENGTH];
-	int currIndex = 0;
-	memset(buffer, '\0', BUFFER_LENGTH);
 	hFind = FindFirstFile(string(filesDirectory).append("*").c_str(), &ffd);
-    do
-    {
-        if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
-        {
-			for (int i = 0; i < sizeof(ffd.cFileName); i++, currIndex++) {
-				if (currIndex == BUFFER_LENGTH) {
-					payloadData.push(buffer);
-					buffer = new char[BUFFER_LENGTH];
-					memset(buffer, '\0', BUFFER_LENGTH);
-					currIndex = 0;
-				}
+	do
+	{
+		if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
+		{
+			payloadData.push(ffd.cFileName);
+			payloadLength += strlen(ffd.cFileName) + 1;
+		}
+	} while (FindNextFile(hFind, &ffd) != 0);
 
-				buffer[currIndex] = ffd.cFileName[i];
-				if (buffer[currIndex] == '\0')
-					i = sizeof(ffd.cFileName);
-			}
-        }
-    }
-    while (FindNextFile(hFind, &ffd) != 0);
-
-	if (currIndex > 0)
-		payloadData.push(buffer);
-	
-	finalPayloadLength = currIndex == 0 ? BUFFER_LENGTH : currIndex;
-}
-
-Msg* FtpThread::getNextChunk()
-{
-	if (payloadData.empty()) {
-		currentState = ReceivingRequest;
-		return getErrorMessage("End of file.");
+	char* payloadContent = new char[payloadLength];
+	int currentIndex = 0;
+	while (!payloadData.empty()) {
+		strcpy(payloadContent + currentIndex, payloadData.front());
+		currentIndex += strlen(payloadData.front()) + 1;
+		if (currentIndex > payloadLength)
+			throw new exception("More files than expected. Please retry");
 	}
 
-	currentState = Sending;
-	Msg* responseMsg = new Msg();
-	responseMsg->type = RESP;
-	responseMsg->length = payloadData.size() == 1 ? finalPayloadLength : BUFFER_LENGTH;
-	responseMsg->sequenceNumber = currentSequenceNumber;
-	memcpy(responseMsg->buffer, payloadData.front(), BUFFER_LENGTH);
-
-	return responseMsg;
+	return payloadContent;
 }
 
-Msg* FtpThread::getErrorMessage(const char* text)
+void ServerThread::sendFile()
 {
-	Msg* errorMsg = new Msg();
-	errorMsg->type = RESP_ERR;
-	errorMsg->length = BUFFER_LENGTH;
-	strcpy(errorMsg->buffer, text);
-
-	return errorMsg;
+	currentState = SENDING;
+	try { setSender(getFileContents(currentMsg->buffer)); }
+	catch (exception e) {
+		currentState = WAITING_FOR_REQUEST;
+		// TODO: Send RESP_ERR
+	}
 }
 
-/**
- * Function - main
- * Usage: Initiates the Server
- *
- * @arg: void
- */
+char* ServerThread::getFileContents(const char* fileName)
+{
+	ifstream fileToRead (string(filesDirectory).append(fileName), ios::ate || ios::binary);
+	if (!fileToRead.is_open())
+		throw new exception("File not found");
+
+	streampos size = fileToRead.tellg();
+	fileToRead.seekg(0);
+	char* fileContents = new char[size];
+	fileToRead.read(fileContents, size);
+	fileToRead.close();
+
+	return fileContents;
+}
+
+void ServerThread::setSender(const char* payloadData)
+{
+	// TODO: Complete functionality here
+}
+
 int main(void)
 {
 	FtpServer ts;

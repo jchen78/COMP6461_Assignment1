@@ -4,7 +4,7 @@
 #define SEQUENCE_RANGE 7
 #define BUFFER_LENGTH 256
 #define RCV_BUFFER_SIZE 512
-#define MSGHDRSIZE 12
+#define MSGHDRSIZE 20
 #define TIMER_DELAY 1000
 #define HOSTID_RANGE 256
 
@@ -16,20 +16,26 @@ typedef enum
 {
 	HANDSHAKE = 1,
 	COMPLETE_HANDSHAKE = 2,
-	REQ_LIST = 5,
-	REQ_GET = 6,
+	GET_LIST = 5,
+	GET_FILE = 6,
+	PUT = 15,
+	POST = 16,
 	RESP = 10,
 	RESP_ERR = 12,
 	ACK = 14,
-	PUT = 15,
 	TERMINATE = 20
 } Type;
 
 /* Message format used for sending and receiving data */
-typedef struct
+struct __declspec(dllexport) Msg
 {
+public:
+	int clientId;
+	int serverId;
 	Type type;
 	int  length;
 	int  sequenceNumber;
 	char buffer[BUFFER_LENGTH];
-} Msg;
+};
+
+// Method to copy Msg contents

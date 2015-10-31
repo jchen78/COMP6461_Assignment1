@@ -7,10 +7,12 @@ using namespace std;
 
 namespace Common
 {
-	Sender::Sender(int socket, struct sockaddr_in serverAddress)
+	Sender::Sender(int socket, int serverId, int clientId, struct sockaddr_in serverAddress)
 	{
 		this->socket = socket;
 		this->ServAddr = serverAddress;
+		this->serverId = serverId;
+		this->clientId = clientId;
 		completePayload = NULL;
 	}
 
@@ -29,6 +31,9 @@ namespace Common
 
 	void Sender::initializePayload(const char* messageContents, int messageLength)
 	{
+		if (messageContents == NULL)
+			throw new exception("Payload data cannot be null");
+
 		numberOfPackets = messageLength / BUFFER_LENGTH;
 		payloadSize = messageLength;
 		if (messageLength % BUFFER_LENGTH > 0)
@@ -40,6 +45,7 @@ namespace Common
 			currentWindow[i] = NULL;
 
 		currentWindowOrigin = 0;
+		currentState = ACTIVE;
 	}
 
 	void Sender::normalizeCurrentWindow()
@@ -53,7 +59,7 @@ namespace Common
 				int currentChar = currentIndex * BUFFER_LENGTH;
 				int currentSize = currentIndex == (numberOfPackets - 1) ? (payloadSize - currentChar - 1) : BUFFER_LENGTH;
 				windowState[currentIndex] = currentFlag;
-				currentWindow[currentIndex] = new SenderThread(socket, &ServAddr, currentFlag, RESP, currentIndex, &completePayload[currentChar], currentSize);
+				currentWindow[currentIndex] = new SenderThread(socket, serverId, clientId, &ServAddr, currentFlag, RESP, currentIndex, &completePayload[currentChar], currentSize);
 				currentWindow[currentIndex]->start();
 			}
 		}
@@ -101,7 +107,7 @@ namespace Common
 		bool isAcked = false;
 		Msg* finalPayloadAck = NULL;
 		int finalSequenceNumber = numberOfPackets % SEQUENCE_RANGE;
-		SenderThread* senderThread = new SenderThread(socket, &ServAddr, &isAcked, RESP_ERR, finalSequenceNumber, "EOF", 4);
+		SenderThread* senderThread = new SenderThread(socket, serverId, clientId, &ServAddr, &isAcked, RESP_ERR, finalSequenceNumber, "EOF", 4);
 		senderThread->start();
 		do {
 			finalPayloadAck = msgGet();
@@ -110,13 +116,19 @@ namespace Common
 		isAcked = true;
 	}
 
-	SenderThread::SenderThread(int sendingSocket, struct sockaddr_in* destinationAddress, bool* isAcked, Type messageType, int sequenceNumber, char *packetContents, int packetLength)
+	SenderState Sender::getCurrentState() {
+		return currentState;
+	}
+
+	SenderThread::SenderThread(int sendingSocket, int serverId, int clientId, struct sockaddr_in* destinationAddress, bool* isAcked, Type messageType, int sequenceNumber, char *packetContents, int packetLength)
 	{
 		socket = sendingSocket;
 		destination = destinationAddress;
 		this->isAcked = isAcked;
 		msg = new Msg();
 		msg->type = messageType;
+		msg->serverId = serverId;
+		msg->clientId = clientId;
 		msg->length = packetLength;
 
 		memcpy(msg->buffer, packetContents, packetLength);
