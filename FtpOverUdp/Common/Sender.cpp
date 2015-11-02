@@ -16,9 +16,12 @@ namespace Common
 		completePayload = NULL;
 	}
 
-	void Sender::send(const char* messageContents, int messageLength)
+	void Sender::send(int firstSequenceNumber, Msg* ackMsg, std::mutex *ackSync)
 	{
-		initializePayload(messageContents, messageLength);
+		sequenceSeed = firstSequenceNumber;
+		currentAck = ackMsg;
+		externalControl = ackSync;
+		externalControl->lock();
 
 		do
 		{
@@ -53,7 +56,7 @@ namespace Common
 		// Assume the indices are correct and all expired workers are set to NULL;
 		// merely ensure that all slots in the current window are populated.
 		for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin + i < numberOfPackets; i++) {
-			int currentIndex = (currentWindowOrigin + i) % SEQUENCE_RANGE;
+			int currentIndex = (currentWindowOrigin + sequenceSeed + i) % SEQUENCE_RANGE;
 			if (currentWindow[currentIndex] == NULL) {
 				bool* currentFlag = new bool(false);
 				int currentChar = currentIndex * BUFFER_LENGTH;
@@ -67,51 +70,24 @@ namespace Common
 
 	void Sender::receiveAck()
 	{
-		// Get the ACK message
-		Msg* ack = msgGet();
-
-		if (ack->type != ACK)
-			return;
-
-		int sequenceNumber = ack->sequenceNumber;
+		externalControl->lock();
+		int sequenceNumber = currentAck->sequenceNumber;
 		*windowState[sequenceNumber] = true;
 		currentWindow[sequenceNumber] = NULL;
 
-		while (currentWindow[currentWindowOrigin] == NULL)
+		for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin < numberOfPackets && currentWindow[(currentWindowOrigin + sequenceSeed) % SEQUENCE_RANGE] == NULL; i++)
 			currentWindowOrigin++;
-	}
-
-	Msg* Sender::msgGet()
-	{
-		char buffer[RCV_BUFFER_SIZE];
-		int bufferLength;
-		int addrLength = sizeof(ServAddr);
-
-		/* Check the received Message Header */
-		if ((bufferLength = recvfrom(socket, buffer, RCV_BUFFER_SIZE, 0, (SOCKADDR *)&ServAddr, &addrLength)) == SOCKET_ERROR)
-		{
-			cerr << "recvfrom(...) failed when getting message" << endl;
-			cerr << WSAGetLastError() << endl;
-			exit(1);
-		}
-
-		// must destruct after use!
-		Msg* msg = new Msg();
-		memcpy(msg, buffer, MSGHDRSIZE);
-		memcpy(msg->buffer, buffer + MSGHDRSIZE, msg->length);
-		return msg;
 	}
 
 	void Sender::finalizePayload()
 	{
 		bool isAcked = false;
-		Msg* finalPayloadAck = NULL;
 		int finalSequenceNumber = numberOfPackets % SEQUENCE_RANGE;
 		SenderThread* senderThread = new SenderThread(socket, serverId, clientId, &ServAddr, &isAcked, RESP_ERR, finalSequenceNumber, "EOF", 4);
 		senderThread->start();
 		do {
-			finalPayloadAck = msgGet();
-		} while (finalPayloadAck->sequenceNumber != finalSequenceNumber);
+			externalControl->lock();
+		} while (currentAck->sequenceNumber != finalSequenceNumber);
 
 		isAcked = true;
 	}

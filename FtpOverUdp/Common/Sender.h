@@ -5,6 +5,7 @@
 #endif
 
 #pragma once
+#include <mutex>
 #include "Common.h"
 #include "Thread.h"
 
@@ -19,10 +20,6 @@ namespace Common
 	{
 	private:
 		SenderState currentState;
-		char *completePayload;
-		int numberOfPackets;
-		int payloadSize;
-		int currentWindowOrigin;
 		class SenderThread *currentWindow[SEQUENCE_RANGE];                    // Array of pointers, not 2D array.
 		bool *windowState[SEQUENCE_RANGE];                                    // Array of pointers, not 2D array.
 
@@ -30,16 +27,23 @@ namespace Common
 		int serverId;
 		int clientId;
 		struct sockaddr_in ServAddr;
+		
+		char *completePayload;
+		int numberOfPackets;
+		int payloadSize;
+		int currentWindowOrigin;
+		int sequenceSeed;
+		Msg* currentAck;
+		std::mutex* externalControl;
 
-		void initializePayload(const char*, int);
 		void normalizeCurrentWindow();
 		void receiveAck();
 		void finalizePayload();
 
-		Msg* msgGet();
 	public:
 		Sender(int socket, int serverId, int clientId, struct sockaddr_in serverAddress);
-		void send(const char *messageContents, int messageLength);
+		void initializePayload(const char* completePayload, int payloadLength);
+		void send(int firstSequenceNumber, Msg* ackMsg, std::mutex *ackSync);
 		SenderState getCurrentState();
 		~Sender() {
 			delete[] completePayload;
