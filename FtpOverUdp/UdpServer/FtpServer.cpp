@@ -129,14 +129,15 @@ ServerThread::ServerThread(int serverSocket, struct sockaddr_in serverAddress, M
 	address = serverAddress;
 	currentState = INITIALIZING;
 	currentMsg = initialHandshake;
-	sender = NULL;
+	sender = new Sender(socket, serverId, currentMsg->clientId, address);
+	filesDirectory = "serverFiles\\";
 
-	sync.lock();
+	outerSync.lock();
 }
 
 int ServerThread::getId() { return serverId; }
 
-mutex* ServerThread::getSync() { return &sync; }
+mutex* ServerThread::getSync() { return &outerSync; }
 
 void ServerThread::run()
 {
@@ -204,7 +205,7 @@ void ServerThread::run()
 			break;
 		}
 
-		sync.lock();
+		outerSync.lock();
 	} while (currentMsg != NULL);
 }
 
@@ -225,7 +226,7 @@ void ServerThread::endHandshake()
 void ServerThread::sendList()
 {
 	currentState = SENDING;
-	setSender(getDirectoryContents());
+	startSender(getDirectoryContents());
 }
 
 char* ServerThread::getDirectoryContents()
@@ -262,7 +263,7 @@ char* ServerThread::getDirectoryContents()
 void ServerThread::sendFile()
 {
 	currentState = SENDING;
-	try { setSender(getFileContents(currentMsg->buffer)); }
+	try { startSender(getFileContents(currentMsg->buffer)); }
 	catch (exception e) {
 		currentState = WAITING_FOR_REQUEST;
 		// TODO: Send RESP_ERR
@@ -284,16 +285,133 @@ char* ServerThread::getFileContents(const char* fileName)
 	return fileContents;
 }
 
-void ServerThread::setSender(const char* payloadData)
+void ServerThread::startSender(const char* payloadData)
 {
-	// TODO: Complete functionality here
+	sender->initializePayload(payloadData, sizeof(payloadData));
+	sender->send(currentMsg->sequenceNumber, currentMsg, &senderSync);
 }
 
 int main(void)
 {
-	FtpServer ts;
-	/* Start the server and start listening to requests */
-	ts.start();
+	WSADATA wsadata;
+	/* Initialize Windows Socket information */
+	if (WSAStartup(0x0202, &wsadata) != 0)
+	{
+		cerr << "Starting WSAStartup() error\n" << endl;
+		exit(1);
+	}
 
-	return 0;
+	char serverName[20];
+	/* Display the name of the host */
+	if (gethostname(serverName, HOSTNAME_LENGTH) != 0)
+	{
+		cerr << "Get the host name error,exit" << endl;
+		exit(1);
+	}
+
+	cout << "Server: " << serverName << " waiting to be contacted for get/put request..." << endl;
+
+	SOCKET serverSock;
+	/* Socket Creation */
+	if ((serverSock = socket(PF_INET, SOCK_DGRAM, 0)) < 0)
+	{
+		std::cerr << "Socket Creation Error,exit" << endl;
+		exit(1);
+	}
+
+	/* Fill-in Server Port and Address information */
+	int ServerPort = REQUEST_PORT;
+	struct sockaddr_in ServerAddr;
+	memset(&ServerAddr, 0, sizeof(ServerAddr));      /* Zero out structure */
+	ServerAddr.sin_family = AF_INET;                 /* Internet address family */
+	ServerAddr.sin_addr.s_addr = INADDR_ANY;  /* Any incoming interface */
+	ServerAddr.sin_port = htons(ServerPort);         /* Local port */
+
+	/* Binding the server socket to the Port Number */
+	if (::bind(serverSock, (struct sockaddr *) &ServerAddr, sizeof(ServerAddr)) < 0)
+	{
+		cerr << "Socket Binding Error from FtpServer,exit" << endl;
+		exit(1);
+	}
+
+
+
+
+
+
+
+
+	
+	
+	struct sockaddr_in ClientAddr;
+	memset(&ClientAddr, 9, sizeof(ClientAddr));
+	ClientAddr.sin_family = AF_INET;
+	ClientAddr.sin_addr.S_un.S_addr = *((unsigned long *)gethostbyname("AsusG551")->h_addr_list[0]);
+	ClientAddr.sin_port = htons(5000);
+	bool isAcked = false;
+	SenderThread* senderThread = new SenderThread(serverSock, 123, 456, &ClientAddr, &isAcked, RESP_ERR, 3, "End of file.", 13);
+	/*while (true) {
+		char* buffer = getRawBuffer(ServerAddr, serverSock);
+		if (strcmp(buffer, "quit") == 0) {
+			delete[] buffer;
+			break;
+		}
+
+
+	}*/
+	senderThread->start();
+
+	time_t startTime;
+	time(&startTime);
+	time_t currentTime;
+	do
+	{
+		time(&currentTime);
+	} while (difftime(currentTime, startTime) < 10);
+	isAcked = true;
+
+
+
+
+
+
+
+
+
+	closesocket(serverSock);
+	WSACleanup();
+
+	//FtpServer ts;
+	///* Start the server and start listening to requests */
+	//ts.start();
+
+	//return 0;
+}
+
+Msg* msgGet(char* buffer)
+{
+	// must destruct after use!
+	Msg* msg = new Msg();
+	memcpy(msg, buffer, MSGHDRSIZE);
+	memcpy(msg->buffer, buffer + MSGHDRSIZE, msg->length);
+	
+	delete[] buffer;
+	return msg;
+}
+
+char* getRawBuffer(struct sockaddr_in ServAddr, int clientSock)
+{
+	char* buffer = new char[RCV_BUFFER_SIZE];
+	int bufferLength;
+	int addrLength = sizeof(ServAddr);
+
+	/* Check the received Message Header */
+	if ((bufferLength = recvfrom(clientSock, buffer, RCV_BUFFER_SIZE, 0, (SOCKADDR *)&ServAddr, &addrLength)) == SOCKET_ERROR)
+	{
+		cerr << "recvfrom(...) failed when getting message" << endl;
+		cerr << WSAGetLastError() << endl;
+		exit(1);
+	}
+
+	return buffer;
 }

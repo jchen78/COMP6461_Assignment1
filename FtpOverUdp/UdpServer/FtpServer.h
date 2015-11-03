@@ -75,26 +75,36 @@ typedef enum {
 class ServerThread : public Thread
 {
 private:
+	// Basic thread configuration
 	int serverId;
 	int socket;
 	struct sockaddr_in address;
 	char* filesDirectory;
 
+	// Communication with server multiplexer
+	class std::mutex outerSync;
 	ServerState currentState;
-	class std::mutex sync;
 	class Msg* currentMsg;
+
+	// Communication with sender module
+	class std::mutex senderSync;
 	class Sender* sender;
+
+	// State for renaming files
 	std::string originalFileName;
+
+	// Single-packet communications
 	SenderThread* currentResponse;
 	bool* isResponseComplete;
 
+	// Private methods to handle requests
 	void startHandshake();
 	void endHandshake();
 	void sendList();
 	char* getDirectoryContents();
 	void sendFile();
 	char* getFileContents(const char* fileName);
-	void setSender(const char* contents);
+	void startSender(const char* contents);
 public:
 	ServerThread(int serverSocket, struct sockaddr_in serverAddress, Msg* initialHandshake);
 	int getId();
@@ -166,13 +176,19 @@ public:
 	*			- Exit (no response & no extra timeout)
 	*/
 	virtual ~ServerThread() {
-		sync.unlock();
+		outerSync.unlock();
+		senderSync.unlock();
 
 		if (currentMsg != NULL)
 			delete currentMsg;
 
 		if (sender != NULL)
 			delete sender;
+
+		if (currentResponse != NULL)
+			delete currentResponse;
+
+		delete[] filesDirectory;
 	}
 };
 
