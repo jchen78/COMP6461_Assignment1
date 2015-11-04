@@ -84,10 +84,10 @@ private:
 	// Communication with server multiplexer
 	class std::mutex outerSync;
 	ServerState currentState;
-	class Msg* currentMsg;
+	struct Msg* currentMsg;
 
 	// Communication with sender module
-	class std::mutex senderSync;
+	class std::recursive_mutex senderSync;
 	class Sender* sender;
 
 	// State for renaming files
@@ -106,6 +106,7 @@ private:
 	char* getFileContents(const char* fileName);
 	void startSender(const char* contents);
 public:
+	/* NOTE: ServerThread will need to share an I/O mutex */
 	ServerThread(int serverSocket, struct sockaddr_in serverAddress, Msg* initialHandshake);
 	int getId();
 	std::mutex* getSync();
@@ -129,7 +130,7 @@ public:
 	*			- Set state to Sending
 	*			- Initialize Sender field
 	*			- Start Sender
-	*		- If state is WaitingForRequest & message is Put:
+	*		- If state is WaitingForRequest & message is Put (note: if file already exists, add random suffix to filename):
 	*			- Set state to Receiving
 	*			- Initialize (as yet not-coded) Receiver field
 	*			- Start Receiver

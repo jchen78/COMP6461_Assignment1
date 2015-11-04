@@ -6,6 +6,7 @@
 
 #pragma once
 #include <mutex>
+#include <condition_variable>
 #include "Common.h"
 #include "Thread.h"
 
@@ -16,7 +17,15 @@ namespace Common
 		COMPLETE
 	} SenderState;
 
-	class COMMON_API Sender
+	struct COMMON_API AsyncLock
+	{
+	public:
+		bool isAsyncReady;
+		std::mutex dataLock;
+		std::condition_variable operationLock;
+	};
+
+	class COMMON_API Sender : public Thread
 	{
 	private:
 		SenderState currentState;
@@ -26,7 +35,7 @@ namespace Common
 		int socket;
 		int serverId;
 		int clientId;
-		struct sockaddr_in ServAddr;
+		struct sockaddr_in DestAddr;
 		
 		char *completePayload;
 		int numberOfPackets;
@@ -34,16 +43,16 @@ namespace Common
 		int currentWindowOrigin;
 		int sequenceSeed;
 		Msg* currentAck;
-		std::mutex* externalControl;
+		AsyncLock externalControl;
 
 		void normalizeCurrentWindow();
 		void receiveAck();
 		void finalizePayload();
-
 	public:
 		Sender(int socket, int serverId, int clientId, struct sockaddr_in serverAddress);
-		void initializePayload(const char* completePayload, int payloadLength);
-		void send(int firstSequenceNumber, Msg* ackMsg, std::mutex *ackSync);
+		AsyncLock* getAsyncControl();
+		void initializePayload(const char* completePayload, int payloadLength, int firstSequenceNumber, Msg* ackMsg);
+		void run();
 		SenderState getCurrentState();
 		~Sender() {
 			delete[] completePayload;
@@ -64,7 +73,6 @@ namespace Common
 		void run();
 		~SenderThread() {
 			delete msg;
-			delete isAcked;
 		}
 	};
 }

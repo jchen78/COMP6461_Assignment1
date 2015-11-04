@@ -5,7 +5,7 @@
 #define BUFFER_LENGTH 256
 #define RCV_BUFFER_SIZE 512
 #define MSGHDRSIZE 20
-#define TIMER_DELAY 1000
+#define TIMER_DELAY 300
 #define HOSTID_RANGE 256
 
 #include <winsock.h>

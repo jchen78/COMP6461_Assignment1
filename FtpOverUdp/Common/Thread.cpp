@@ -18,7 +18,6 @@ namespace Common
 	*/
 	void * Thread::pthread_callback(void *ptrThis)
 	{
-
 		if (ptrThis == NULL)
 			return NULL;
 		Thread  * ptr_this = (Thread *)(ptrThis);

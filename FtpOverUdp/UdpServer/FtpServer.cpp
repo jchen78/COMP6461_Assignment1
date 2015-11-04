@@ -287,8 +287,8 @@ char* ServerThread::getFileContents(const char* fileName)
 
 void ServerThread::startSender(const char* payloadData)
 {
-	sender->initializePayload(payloadData, sizeof(payloadData));
-	sender->send(currentMsg->sequenceNumber, currentMsg, &senderSync);
+	sender->initializePayload(payloadData, sizeof(payloadData), currentMsg->sequenceNumber, currentMsg);
+	sender->start();
 }
 
 int main(void)
@@ -348,27 +348,34 @@ int main(void)
 	ClientAddr.sin_family = AF_INET;
 	ClientAddr.sin_addr.S_un.S_addr = *((unsigned long *)gethostbyname("AsusG551")->h_addr_list[0]);
 	ClientAddr.sin_port = htons(5000);
-	bool isAcked = false;
-	SenderThread* senderThread = new SenderThread(serverSock, 123, 456, &ClientAddr, &isAcked, RESP_ERR, 3, "End of file.", 13);
-	/*while (true) {
-		char* buffer = getRawBuffer(ServerAddr, serverSock);
-		if (strcmp(buffer, "quit") == 0) {
-			delete[] buffer;
-			break;
-		}
-
-
-	}*/
-	senderThread->start();
-
-	time_t startTime;
-	time(&startTime);
-	time_t currentTime;
-	do
+	Msg msg;
+	memset(&msg, 0, sizeof(msg));
+	Sender *sender = new Sender(serverSock, 123, 456, ClientAddr);
+	Common::AsyncLock* sync = sender->getAsyncControl();
+	sender->initializePayload("End of file.", 14, 3, &msg);
+	sender->start();
+	time_t start, current;
+	time(&start);
+	do { time(&current); } while (difftime(current, start) < 3);
+	int i = 0;
 	{
-		time(&currentTime);
-	} while (difftime(currentTime, startTime) < 10);
-	isAcked = true;
+		std::unique_lock<mutex> locker(sync->dataLock);
+		msg.sequenceNumber = 3;
+		msg.type = ACK;
+		sync->isAsyncReady = true;
+		sync->operationLock.notify_one();
+	}
+	
+	time(&start);
+	do { time(&current); } while (difftime(current, start) < 3);
+	{
+		std::unique_lock<mutex> locker(sync->dataLock);
+		msg.sequenceNumber = 4;
+		msg.type = ACK;
+		sync->isAsyncReady = true;
+		sync->operationLock.notify_one();
+	}
+
 
 
 

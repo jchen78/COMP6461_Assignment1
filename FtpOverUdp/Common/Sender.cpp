@@ -7,32 +7,23 @@ using namespace std;
 
 namespace Common
 {
-	Sender::Sender(int socket, int serverId, int clientId, struct sockaddr_in serverAddress)
+	Sender::Sender(int socket, int serverId, int clientId, struct sockaddr_in destinationAddress)
 	{
 		this->socket = socket;
-		this->ServAddr = serverAddress;
+		this->DestAddr = destinationAddress;
 		this->serverId = serverId;
 		this->clientId = clientId;
+		
+		this->externalControl.isAsyncReady = false;
 		completePayload = NULL;
 	}
 
-	void Sender::send(int firstSequenceNumber, Msg* ackMsg, std::mutex *ackSync)
+	AsyncLock* Sender::getAsyncControl()
 	{
-		sequenceSeed = firstSequenceNumber;
-		currentAck = ackMsg;
-		externalControl = ackSync;
-		externalControl->lock();
-
-		do
-		{
-			normalizeCurrentWindow();
-			receiveAck();
-		} while (currentWindowOrigin < numberOfPackets);
-
-		finalizePayload();
+		return &externalControl;
 	}
 
-	void Sender::initializePayload(const char* messageContents, int messageLength)
+	void Sender::initializePayload(const char* messageContents, int messageLength, int firstSequenceNumber, Msg* ackMsg)
 	{
 		if (messageContents == NULL)
 			throw new exception("Payload data cannot be null");
@@ -49,6 +40,20 @@ namespace Common
 
 		currentWindowOrigin = 0;
 		currentState = ACTIVE;
+
+		sequenceSeed = firstSequenceNumber;
+		currentAck = ackMsg;
+	}
+
+	void Sender::run()
+	{
+		while (currentWindowOrigin < numberOfPackets)
+		{
+			normalizeCurrentWindow();
+			receiveAck();
+		}
+
+		finalizePayload();
 	}
 
 	void Sender::normalizeCurrentWindow()
@@ -57,12 +62,13 @@ namespace Common
 		// merely ensure that all slots in the current window are populated.
 		for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin + i < numberOfPackets; i++) {
 			int currentIndex = (currentWindowOrigin + sequenceSeed + i) % SEQUENCE_RANGE;
+			int currentPayloadIndex = (currentWindowOrigin + i) % SEQUENCE_RANGE;
 			if (currentWindow[currentIndex] == NULL) {
 				bool* currentFlag = new bool(false);
-				int currentChar = currentIndex * BUFFER_LENGTH;
-				int currentSize = currentIndex == (numberOfPackets - 1) ? (payloadSize - currentChar - 1) : BUFFER_LENGTH;
+				int currentChar = currentPayloadIndex * BUFFER_LENGTH;
+				int currentSize = currentPayloadIndex == (numberOfPackets - 1) ? (payloadSize - currentChar - 1) : BUFFER_LENGTH;
 				windowState[currentIndex] = currentFlag;
-				currentWindow[currentIndex] = new SenderThread(socket, serverId, clientId, &ServAddr, currentFlag, RESP, currentIndex, &completePayload[currentChar], currentSize);
+				currentWindow[currentIndex] = new SenderThread(socket, serverId, clientId, &DestAddr, currentFlag, RESP, currentIndex, &completePayload[currentChar], currentSize);
 				currentWindow[currentIndex]->start();
 			}
 		}
@@ -70,10 +76,15 @@ namespace Common
 
 	void Sender::receiveAck()
 	{
-		externalControl->lock();
-		int sequenceNumber = currentAck->sequenceNumber;
-		*windowState[sequenceNumber] = true;
-		currentWindow[sequenceNumber] = NULL;
+		while (!externalControl.isAsyncReady) {
+			unique_lock<mutex> locker(externalControl.dataLock);
+			externalControl.operationLock.wait(locker);
+		}
+
+		int index = (currentAck->sequenceNumber) % SEQUENCE_RANGE;
+		*windowState[index] = true;
+		currentWindow[index] = NULL;
+		externalControl.isAsyncReady = false;
 
 		for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin < numberOfPackets && currentWindow[(currentWindowOrigin + sequenceSeed) % SEQUENCE_RANGE] == NULL; i++)
 			currentWindowOrigin++;
@@ -82,11 +93,14 @@ namespace Common
 	void Sender::finalizePayload()
 	{
 		bool isAcked = false;
-		int finalSequenceNumber = numberOfPackets % SEQUENCE_RANGE;
-		SenderThread* senderThread = new SenderThread(socket, serverId, clientId, &ServAddr, &isAcked, RESP_ERR, finalSequenceNumber, "EOF", 4);
+		int finalSequenceNumber = (numberOfPackets + sequenceSeed) % SEQUENCE_RANGE;
+		SenderThread* senderThread = new SenderThread(socket, serverId, clientId, &DestAddr, &isAcked, RESP_ERR, finalSequenceNumber, "EOF", 4);
 		senderThread->start();
 		do {
-			externalControl->lock();
+			while (!externalControl.isAsyncReady) {
+				unique_lock<mutex> locker(externalControl.dataLock);
+				externalControl.operationLock.wait(locker);
+			}
 		} while (currentAck->sequenceNumber != finalSequenceNumber);
 
 		isAcked = true;
@@ -121,6 +135,10 @@ namespace Common
 				std::cerr << WSAGetLastError() << endl;
 				return;
 			}
+
+			Sleep(TIMER_DELAY);
 		}
+
+		delete this;
 	}
 }
