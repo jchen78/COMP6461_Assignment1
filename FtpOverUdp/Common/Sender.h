@@ -1,14 +1,7 @@
-#ifdef COMMON_EXPORTS
-#define COMMON_API __declspec(dllexport)
-#else
-#define COMMON_API __declspec(dllimport)
-#endif
-
 #pragma once
-#include <mutex>
-#include <condition_variable>
 #include "Common.h"
 #include "Thread.h"
+#include "AsyncLock.h"
 
 namespace Common
 {
@@ -16,14 +9,6 @@ namespace Common
 		ACTIVE,
 		COMPLETE
 	} SenderState;
-
-	struct COMMON_API AsyncLock
-	{
-	public:
-		bool isAsyncReady;
-		std::mutex dataLock;
-		std::condition_variable operationLock;
-	};
 
 	class COMMON_API Sender : public Thread
 	{

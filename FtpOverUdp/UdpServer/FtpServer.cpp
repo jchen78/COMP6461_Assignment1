@@ -350,30 +350,33 @@ int main(void)
 	ClientAddr.sin_port = htons(5000);
 	Msg msg;
 	memset(&msg, 0, sizeof(msg));
+	char message[256 * 3];
+	memset(message, 0, sizeof(message));
+	message[0] = 'A';
+	message[256] = 'B';
+	message[512] = 'C';
 	Sender *sender = new Sender(serverSock, 123, 456, ClientAddr);
 	Common::AsyncLock* sync = sender->getAsyncControl();
-	sender->initializePayload("End of file.", 14, 3, &msg);
+	sender->initializePayload(message, 256 * 3, 3, &msg);
 	sender->start();
 	time_t start, current;
 	time(&start);
 	do { time(&current); } while (difftime(current, start) < 3);
-	int i = 0;
+	for (int i = 0; i < 3; i++)
 	{
-		std::unique_lock<mutex> locker(sync->dataLock);
-		msg.sequenceNumber = 3;
+		sync->waitForSignalling();
+		msg.sequenceNumber = 3 + i;
 		msg.type = ACK;
-		sync->isAsyncReady = true;
-		sync->operationLock.notify_one();
+		sync->finalizeSignalling();
 	}
 	
 	time(&start);
-	do { time(&current); } while (difftime(current, start) < 3);
+	do { time(&current); } while (difftime(current, start) < 1);
 	{
-		std::unique_lock<mutex> locker(sync->dataLock);
+		sync->waitForSignalling();
 		msg.sequenceNumber = 4;
 		msg.type = ACK;
-		sync->isAsyncReady = true;
-		sync->operationLock.notify_one();
+		sync->finalizeSignalling();
 	}
 
 

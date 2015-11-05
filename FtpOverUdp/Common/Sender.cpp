@@ -7,14 +7,14 @@ using namespace std;
 
 namespace Common
 {
-	Sender::Sender(int socket, int serverId, int clientId, struct sockaddr_in destinationAddress)
+	Sender::Sender(int socket, int serverId, int clientId, struct sockaddr_in destinationAddress) :
+		externalControl(true, false)
 	{
 		this->socket = socket;
 		this->DestAddr = destinationAddress;
 		this->serverId = serverId;
 		this->clientId = clientId;
 		
-		this->externalControl.isAsyncReady = false;
 		completePayload = NULL;
 	}
 
@@ -76,15 +76,13 @@ namespace Common
 
 	void Sender::receiveAck()
 	{
-		while (!externalControl.isAsyncReady) {
-			unique_lock<mutex> locker(externalControl.dataLock);
-			externalControl.operationLock.wait(locker);
-		}
+		externalControl.waitForConsumption();
 
 		int index = (currentAck->sequenceNumber) % SEQUENCE_RANGE;
 		*windowState[index] = true;
 		currentWindow[index] = NULL;
-		externalControl.isAsyncReady = false;
+		
+		externalControl.finalizeConsumption();
 
 		for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin < numberOfPackets && currentWindow[(currentWindowOrigin + sequenceSeed) % SEQUENCE_RANGE] == NULL; i++)
 			currentWindowOrigin++;
@@ -97,10 +95,8 @@ namespace Common
 		SenderThread* senderThread = new SenderThread(socket, serverId, clientId, &DestAddr, &isAcked, RESP_ERR, finalSequenceNumber, "EOF", 4);
 		senderThread->start();
 		do {
-			while (!externalControl.isAsyncReady) {
-				unique_lock<mutex> locker(externalControl.dataLock);
-				externalControl.operationLock.wait(locker);
-			}
+			externalControl.waitForConsumption();
+			externalControl.finalizeConsumption();
 		} while (currentAck->sequenceNumber != finalSequenceNumber);
 
 		isAcked = true;
