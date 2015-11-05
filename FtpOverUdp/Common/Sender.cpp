@@ -116,6 +116,7 @@ namespace Common
 		msg->serverId = serverId;
 		msg->clientId = clientId;
 		msg->length = packetLength;
+		msg->sequenceNumber = sequenceNumber;
 
 		memcpy(msg->buffer, packetContents, packetLength);
 	}

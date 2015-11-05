@@ -350,14 +350,17 @@ int main(void)
 	ClientAddr.sin_port = htons(5000);
 	Msg msg;
 	memset(&msg, 0, sizeof(msg));
-	char message[256 * 3];
+	const int sizeMessage = 256 * 5;
+	char message[sizeMessage];
 	memset(message, 0, sizeof(message));
 	message[0] = 'A';
 	message[256] = 'B';
 	message[512] = 'C';
+	message[768] = 'D';
+	message[1024] = 'E';
 	Sender *sender = new Sender(serverSock, 123, 456, ClientAddr);
 	Common::AsyncLock* sync = sender->getAsyncControl();
-	sender->initializePayload(message, 256 * 3, 3, &msg);
+	sender->initializePayload(message, sizeMessage, 3, &msg);
 	sender->start();
 	time_t start, current;
 	time(&start);
@@ -371,10 +374,20 @@ int main(void)
 	}
 	
 	time(&start);
-	do { time(&current); } while (difftime(current, start) < 10);
+	do { time(&current); } while (difftime(current, start) < 3);
+	for (int i = 3; i < 5; i++)
 	{
 		sync->waitForSignalling();
-		msg.sequenceNumber = 6;
+		msg.sequenceNumber = (3 + i) % SEQUENCE_RANGE;
+		msg.type = ACK;
+		sync->finalizeSignalling();
+	}
+	
+	time(&start);
+	do { time(&current); } while (difftime(current, start) < 3);
+	{
+		sync->waitForSignalling();
+		msg.sequenceNumber = 1;
 		msg.type = ACK;
 		sync->finalizeSignalling();
 	}
