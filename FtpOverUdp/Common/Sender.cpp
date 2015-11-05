@@ -7,8 +7,7 @@ using namespace std;
 
 namespace Common
 {
-	Sender::Sender(int socket, int serverId, int clientId, struct sockaddr_in destinationAddress) :
-		externalControl(true, false)
+	Sender::Sender(int socket, int serverId, int clientId, struct sockaddr_in destinationAddress)
 	{
 		this->socket = socket;
 		this->DestAddr = destinationAddress;
@@ -16,11 +15,6 @@ namespace Common
 		this->clientId = clientId;
 		
 		completePayload = NULL;
-	}
-
-	AsyncLock* Sender::getAsyncControl()
-	{
-		return &externalControl;
 	}
 
 	void Sender::initializePayload(const char* messageContents, int messageLength, int firstSequenceNumber, Msg* ackMsg)
@@ -39,21 +33,15 @@ namespace Common
 			currentWindow[i] = NULL;
 
 		currentWindowOrigin = 0;
-		currentState = ACTIVE;
+		isComplete = false;
 
 		sequenceSeed = firstSequenceNumber;
 		currentAck = ackMsg;
 	}
 
-	void Sender::run()
+	void Sender::send()
 	{
-		while (currentWindowOrigin < numberOfPackets)
-		{
-			normalizeCurrentWindow();
-			receiveAck();
-		}
-
-		finalizePayload();
+		normalizeCurrentWindow();
 	}
 
 	void Sender::normalizeCurrentWindow()
@@ -74,36 +62,36 @@ namespace Common
 		}
 	}
 
-	void Sender::receiveAck()
+	void Sender::processAck()
 	{
-		externalControl.waitForConsumption();
-
-		int index = (currentAck->sequenceNumber) % SEQUENCE_RANGE;
+		int index = currentAck->sequenceNumber;
 		*windowState[index] = true;
 		currentWindow[index] = NULL;
-		
-		externalControl.finalizeConsumption();
+
+		if (currentWindowOrigin == numberOfPackets) {
+			isComplete = index == (currentWindowOrigin + sequenceSeed) % SEQUENCE_RANGE;
+			return;
+		}
 
 		for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin < numberOfPackets && currentWindow[(currentWindowOrigin + sequenceSeed) % SEQUENCE_RANGE] == NULL; i++)
 			currentWindowOrigin++;
+
+		if (currentWindowOrigin == numberOfPackets)
+			finalizePayload();
+		else
+			normalizeCurrentWindow();
 	}
 
 	void Sender::finalizePayload()
 	{
-		bool isAcked = false;
-		int finalSequenceNumber = (numberOfPackets + sequenceSeed) % SEQUENCE_RANGE;
-		SenderThread* senderThread = new SenderThread(socket, serverId, clientId, &DestAddr, &isAcked, RESP_ERR, finalSequenceNumber, "EOF", 4);
-		senderThread->start();
-		do {
-			externalControl.waitForConsumption();
-			externalControl.finalizeConsumption();
-		} while (currentAck->sequenceNumber != finalSequenceNumber);
-
-		isAcked = true;
+		int index = (numberOfPackets + sequenceSeed) % SEQUENCE_RANGE;
+		windowState[index] = new bool(false);
+		currentWindow[index] = new SenderThread(socket, serverId, clientId, &DestAddr, windowState[index], RESP_ERR, index, "EOF", 4);
+		currentWindow[index]->start();
 	}
 
-	SenderState Sender::getCurrentState() {
-		return currentState;
+	bool Sender::isPayloadSent() {
+		return isComplete;
 	}
 
 	SenderThread::SenderThread(int sendingSocket, int serverId, int clientId, struct sockaddr_in* destinationAddress, bool* isAcked, Type messageType, int sequenceNumber, char *packetContents, int packetLength)

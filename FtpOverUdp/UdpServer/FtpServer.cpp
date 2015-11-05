@@ -11,7 +11,6 @@
 #include <sys/stat.h>
 #include <cstdio>
 #include <string>
-#include <vector>
 #include <fstream>
 #include <process.h>
 #include "FtpServer.h"
@@ -121,28 +120,28 @@ void FtpServer::log(const std::string &logItem)
 }
 
 /*-------------------------------ServerThread Class--------------------------------*/
-ServerThread::ServerThread(int serverSocket, struct sockaddr_in serverAddress, Msg* initialHandshake)
+ServerThread::ServerThread(int serverId, int serverSocket, struct sockaddr_in serverAddress, Msg* initialHandshake) :
+	outerSync(false, true)
 {
-	srand(time(NULL));
-	serverId = rand();
-	socket = serverSocket;
-	address = serverAddress;
-	currentState = INITIALIZING;
-	currentMsg = initialHandshake;
-	sender = new Sender(socket, serverId, currentMsg->clientId, address);
-	filesDirectory = "serverFiles\\";
-
-	outerSync.lock();
+	this->serverId = serverId;
+	this->socket = serverSocket;
+	this->address = serverAddress;
+	this->currentState = INITIALIZING;
+	this->currentMsg = initialHandshake;
+	this->sender = new Sender(socket, serverId, currentMsg->clientId, address);
+	this->filesDirectory = "serverFiles\\";
 }
 
 int ServerThread::getId() { return serverId; }
 
-mutex* ServerThread::getSync() { return &outerSync; }
+AsyncLock* ServerThread::getSync() { return &outerSync; }
 
 void ServerThread::run()
 {
 	do // NOTE : currentMsg can only be null if the initial handshake is null, or ServerThread sets it to NULL.
 	{
+		outerSync.waitForConsumption();
+
 		switch (currentState) {
 		case INITIALIZING:
 			startHandshake();
@@ -173,7 +172,7 @@ void ServerThread::run()
 			break;
 		case SENDING:
 			if (currentMsg->type == ACK) {
-				// TODO: Complete action
+				dispatchToSender();
 			} else {
 				// TODO: Send RESP_ERR
 			}
@@ -198,15 +197,15 @@ void ServerThread::run()
 			break;
 		case EXITING:
 			if (currentMsg->type == ACK) {
-				// TODO: Complete action (incl. set currentMsg to null)
+				// TODO: Complete action (incl. set state to terminated)
 			} else {
 				// TODO: Send RESP_ERR
 			}
 			break;
 		}
 
-		outerSync.lock();
-	} while (currentMsg != NULL);
+		outerSync.finalizeConsumption();
+	} while (currentState != TERMINATED);
 }
 
 void ServerThread::startHandshake()
@@ -214,6 +213,7 @@ void ServerThread::startHandshake()
 	currentState = HANDSHAKING;
 	isResponseComplete = new bool(false);
 	currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, isResponseComplete, HANDSHAKE, 0, "", 0);
+	currentResponse->start();
 }
 
 void ServerThread::endHandshake()
@@ -229,7 +229,7 @@ void ServerThread::sendList()
 	startSender(getDirectoryContents());
 }
 
-char* ServerThread::getDirectoryContents()
+Payload* ServerThread::getDirectoryContents()
 {
 	queue<char*> payloadData;
 	int payloadLength = 0;
@@ -248,10 +248,12 @@ char* ServerThread::getDirectoryContents()
 		}
 	} while (FindNextFile(hFind, &ffd) != 0);
 
-	char* payloadContent = new char[payloadLength];
+	Payload* payloadContent = new Payload();
+	payloadContent->length = payloadLength;
+	payloadContent->data = new char[payloadLength];
 	int currentIndex = 0;
 	while (!payloadData.empty()) {
-		strcpy(payloadContent + currentIndex, payloadData.front());
+		strcpy(payloadContent->data + currentIndex, payloadData.front());
 		currentIndex += strlen(payloadData.front()) + 1;
 		if (currentIndex > payloadLength)
 			throw new exception("More files than expected. Please retry");
@@ -270,25 +272,35 @@ void ServerThread::sendFile()
 	}
 }
 
-char* ServerThread::getFileContents(const char* fileName)
+Payload* ServerThread::getFileContents(const char* fileName)
 {
-	ifstream fileToRead (string(filesDirectory).append(fileName), ios::ate || ios::binary);
-	if (!fileToRead.is_open())
+	ifstream fileToRead (string(filesDirectory).append(fileName), ios::binary);
+	if (!fileToRead)
 		throw new exception("File not found");
 
-	streampos size = fileToRead.tellg();
-	fileToRead.seekg(0);
-	char* fileContents = new char[size];
-	fileToRead.read(fileContents, size);
+	int size = 256 * 5;
+	fileToRead.seekg(0, fileToRead.beg);
+
+	Payload* contents = new Payload();
+	contents->length = size;
+	contents->data = new char[size];
+	fileToRead.read(contents->data, size);
 	fileToRead.close();
 
-	return fileContents;
+	return contents;
 }
 
-void ServerThread::startSender(const char* payloadData)
+void ServerThread::startSender(Payload* payloadData)
 {
-	sender->initializePayload(payloadData, sizeof(payloadData), currentMsg->sequenceNumber, currentMsg);
-	sender->start();
+	sender->initializePayload(payloadData->data, payloadData->length, currentMsg->sequenceNumber, currentMsg);
+	sender->send();
+}
+
+void ServerThread::dispatchToSender()
+{
+	sender->processAck();
+	if (sender->isPayloadSent())
+		currentState = WAITING_FOR_REQUEST;
 }
 
 int main(void)
@@ -343,6 +355,17 @@ int main(void)
 
 	
 	
+	//{
+	//	char payload[256 * 5];
+	//	memset(payload, ' ', 256 * 5);
+	//	payload[0] = 'A';
+	//	payload[256] = 'B';
+	//	payload[512] = 'C';
+	//	payload[768] = 'D';
+	//	payload[1024] = 'E';
+	//	std::ofstream os("serverFiles\\testFile.txt", ios::out | ios::binary);
+	//	os.write(payload, 256 * 5);
+	//}
 	struct sockaddr_in ClientAddr;
 	memset(&ClientAddr, 9, sizeof(ClientAddr));
 	ClientAddr.sin_family = AF_INET;
@@ -350,51 +373,59 @@ int main(void)
 	ClientAddr.sin_port = htons(5000);
 	Msg msg;
 	memset(&msg, 0, sizeof(msg));
-	const int sizeMessage = 256 * 5;
-	char message[sizeMessage];
-	memset(message, 0, sizeof(message));
-	message[0] = 'A';
-	message[256] = 'B';
-	message[512] = 'C';
-	message[768] = 'D';
-	message[1024] = 'E';
-	Sender *sender = new Sender(serverSock, 123, 456, ClientAddr);
-	Common::AsyncLock* sync = sender->getAsyncControl();
-	sender->initializePayload(message, sizeMessage, 3, &msg);
-	sender->start();
+	msg.clientId = 123;
+	msg.type = HANDSHAKE;
+
+	int noOp;
+		int j = 0;
 	time_t start, current;
-	time(&start);
-	do { time(&current); } while (difftime(current, start) < 3);
-	for (int i = 0; i < 3; i++)
+	ServerThread* thread = new ServerThread(456, serverSock, ClientAddr, &msg);
+	AsyncLock* threadSync = thread->getSync();
+	thread->start();
+	
+	time(&start); do { time(&current); } while (difftime(current, start) < 3);
+	noOp = 0;
+	threadSync->waitForSignalling();
+	msg.type = COMPLETE_HANDSHAKE;
+	threadSync->finalizeSignalling();
+	
+	time(&start); do { time(&current); } while (difftime(current, start) < 3);
+	noOp = 0;
+	threadSync->waitForSignalling();
+	msg.type = GET_FILE;
+	msg.sequenceNumber = 5;
+	memcpy(msg.buffer, "testFile.txt", BUFFER_LENGTH);
+	threadSync->finalizeSignalling();
+	
 	{
-		sync->waitForSignalling();
-		msg.sequenceNumber = 3 + i;
-		msg.type = ACK;
-		sync->finalizeSignalling();
+		time(&start); do { time(&current); } while (difftime(current, start) < 3);
+		noOp = 0;
+		for (int i = 0; i < 3; i++) {
+			threadSync->waitForSignalling();
+			msg.type = ACK;
+			msg.sequenceNumber = (5 + i) % SEQUENCE_RANGE;
+			threadSync->finalizeSignalling();
+		}
 	}
 	
-	time(&start);
-	do { time(&current); } while (difftime(current, start) < 3);
-	for (int i = 3; i < 5; i++)
-	{
-		sync->waitForSignalling();
-		msg.sequenceNumber = (3 + i) % SEQUENCE_RANGE;
+	time(&start); do { time(&current); } while (difftime(current, start) < 3);
+	noOp = 0;
+	for (int i = 3; i < 5; i++) {
+		threadSync->waitForSignalling();
 		msg.type = ACK;
-		sync->finalizeSignalling();
+		msg.sequenceNumber = (5 + i) % SEQUENCE_RANGE;
+		threadSync->finalizeSignalling();
 	}
 	
-	time(&start);
-	do { time(&current); } while (difftime(current, start) < 3);
-	{
-		sync->waitForSignalling();
-		msg.sequenceNumber = 1;
-		msg.type = ACK;
-		sync->finalizeSignalling();
-	}
-	time(&start);
-	do { time(&current); } while (difftime(current, start) < 10);
-
-
+	time(&start); do { time(&current); } while (difftime(current, start) < 3);
+	noOp = 0;
+	threadSync->waitForSignalling();
+	msg.type = ACK;
+	msg.sequenceNumber = 3;
+	threadSync->finalizeSignalling();
+	
+	time(&start); do { time(&current); } while (difftime(current, start) < 3);
+	noOp = 0;
 
 
 

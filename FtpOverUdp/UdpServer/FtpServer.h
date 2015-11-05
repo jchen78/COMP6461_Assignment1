@@ -69,31 +69,27 @@ typedef enum {
 	SENDING,
 	RECEIVING,
 	RENAMING,
-	EXITING
+	EXITING,
+	TERMINATED
 } ServerState;
 
 class ServerThread : public Thread
 {
 private:
 	// Basic thread configuration
+	int log;
 	int serverId;
 	int socket;
 	struct sockaddr_in address;
 	char* filesDirectory;
 
 	// Communication with server multiplexer
-	class std::mutex outerSync;
+	class AsyncLock outerSync;
 	ServerState currentState;
 	struct Msg* currentMsg;
 
-	// Communication with sender module
-	class std::recursive_mutex senderSync;
 	class Sender* sender;
-
-	// State for renaming files
 	std::string originalFileName;
-
-	// Single-packet communications
 	SenderThread* currentResponse;
 	bool* isResponseComplete;
 
@@ -101,15 +97,16 @@ private:
 	void startHandshake();
 	void endHandshake();
 	void sendList();
-	char* getDirectoryContents();
+	Payload* getDirectoryContents();
 	void sendFile();
-	char* getFileContents(const char* fileName);
-	void startSender(const char* contents);
+	Payload* getFileContents(const char* fileName);
+	void startSender(Payload* contents);
+	void dispatchToSender();
 public:
 	/* NOTE: ServerThread will need to share an I/O mutex */
-	ServerThread(int serverSocket, struct sockaddr_in serverAddress, Msg* initialHandshake);
+	ServerThread(int serverId, int serverSocket, struct sockaddr_in serverAddress, Msg* initialHandshake);
 	int getId();
-	std::mutex* getSync();
+	AsyncLock* getSync();
 	virtual void run();
 	/* Switch by current state, msg type & misc. conditions (in order):
 	*		- If state is Initializing & message is Handshake (impossible for other message states):
@@ -177,9 +174,6 @@ public:
 	*			- Exit (no response & no extra timeout)
 	*/
 	virtual ~ServerThread() {
-		outerSync.unlock();
-		senderSync.unlock();
-
 		if (currentMsg != NULL)
 			delete currentMsg;
 

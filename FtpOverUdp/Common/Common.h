@@ -38,4 +38,10 @@ public:
 	char buffer[BUFFER_LENGTH];
 };
 
+struct __declspec(dllexport) Payload
+{
+public:
+	int length;
+	char* data;
+};
 // Method to copy Msg contents

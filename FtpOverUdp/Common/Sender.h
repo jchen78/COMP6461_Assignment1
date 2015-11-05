@@ -2,18 +2,14 @@
 #include "Common.h"
 #include "Thread.h"
 #include "AsyncLock.h"
+#include <queue>
 
 namespace Common
 {
-	typedef enum {
-		ACTIVE,
-		COMPLETE
-	} SenderState;
-
-	class COMMON_API Sender : public Thread
+	class COMMON_API Sender
 	{
 	private:
-		SenderState currentState;
+		bool isComplete;
 		class SenderThread *currentWindow[SEQUENCE_RANGE];                    // Array of pointers, not 2D array.
 		bool *windowState[SEQUENCE_RANGE];                                    // Array of pointers, not 2D array.
 
@@ -28,17 +24,15 @@ namespace Common
 		int currentWindowOrigin;
 		int sequenceSeed;
 		Msg* currentAck;
-		AsyncLock externalControl;
 
 		void normalizeCurrentWindow();
-		void receiveAck();
 		void finalizePayload();
 	public:
 		Sender(int socket, int serverId, int clientId, struct sockaddr_in serverAddress);
-		AsyncLock* getAsyncControl();
 		void initializePayload(const char* completePayload, int payloadLength, int firstSequenceNumber, Msg* ackMsg);
-		void run();
-		SenderState getCurrentState();
+		void send();
+		void processAck();
+		bool isPayloadSent();
 		~Sender() {
 			delete[] completePayload;
 		}
