@@ -16,6 +16,9 @@
 #include "FtpServer.h"
 #include <stdlib.h>
 
+#include "ThreadA.h"
+#include "ThreadB.h"
+
 using namespace std;
 
 /**
@@ -121,7 +124,7 @@ void FtpServer::log(const std::string &logItem)
 
 /*-------------------------------ServerThread Class--------------------------------*/
 ServerThread::ServerThread(int serverId, int serverSocket, struct sockaddr_in serverAddress, Msg* initialHandshake) :
-	outerSync(false, true)
+	outerSync(true)
 {
 	this->serverId = serverId;
 	this->socket = serverSocket;

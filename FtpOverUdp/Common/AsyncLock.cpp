@@ -3,35 +3,28 @@
 
 namespace Common
 {
-	AsyncLock::AsyncLock(bool waitForReader, bool waitForWriter)
+	AsyncLock::AsyncLock(bool startWithConsumption)
 	{
-		isAsyncReady = !waitForReader;
-		isAsyncDone = !waitForWriter;
+		isConsumptionState = startWithConsumption;
 	}
 
 	void AsyncLock::waitForConsumption() {
-		while (!isAsyncReady) {
-			std::unique_lock<std::mutex> locker(readLock);
-			readOperation.wait(locker);
-		}
+		std::unique_lock<std::mutex> locker(readLock);
+		readOperation.wait(locker, [&]() { return isConsumptionState; });
 	}
 
 	void AsyncLock::finalizeConsumption() {
-		isAsyncReady = false;
-		isAsyncDone = true;
+		isConsumptionState = false;
 		writeOperation.notify_one();
 	}
 
 	void AsyncLock::waitForSignalling() {
-		while (!isAsyncDone) {
-			std::unique_lock<std::mutex> locker(writeLock);
-			writeOperation.wait(locker);
-		}
+		std::unique_lock<std::mutex> locker(writeLock);
+		writeOperation.wait(locker, [&]() { return !isConsumptionState; });
 	}
 
 	void AsyncLock::finalizeSignalling() {
-		isAsyncDone = false;
-		isAsyncReady = true;
+		isConsumptionState = true;
 		readOperation.notify_one();
 	}
 }

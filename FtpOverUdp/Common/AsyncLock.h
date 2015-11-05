@@ -1,3 +1,5 @@
+#pragma once
+
 #ifdef COMMON_EXPORTS
 #define COMMON_API __declspec(dllexport)
 #else
@@ -13,15 +15,16 @@ namespace Common
 	class COMMON_API AsyncLock
 	{
 	private:
-		bool isAsyncReady;
+		bool isConsumptionState;
+		std::mutex switchLock;
+
 		std::mutex readLock;
 		std::condition_variable readOperation;
 
-		bool isAsyncDone;
 		std::mutex writeLock;
 		std::condition_variable writeOperation;
 	public:
-		AsyncLock(bool waitForReader, bool waitForWriter);
+		AsyncLock(bool startWithConsumption);
 
 		void waitForConsumption();
 		void finalizeConsumption();

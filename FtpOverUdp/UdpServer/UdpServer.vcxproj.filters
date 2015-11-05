@@ -21,6 +21,12 @@
     <ClInclude Include="ThreadedReceiver.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ThreadA.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="ThreadB.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FtpServer.cpp">
