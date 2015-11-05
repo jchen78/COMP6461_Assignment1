@@ -9,6 +9,7 @@
 
 namespace Common
 {
+	// Implementation adapted from: http://codexpert.ro/blog/2013/03/01/cpp11-concurrency-condition-variables/
 	class COMMON_API AsyncLock
 	{
 	private:
