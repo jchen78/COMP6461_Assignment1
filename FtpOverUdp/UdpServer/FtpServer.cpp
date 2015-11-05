@@ -371,13 +371,15 @@ int main(void)
 	}
 	
 	time(&start);
-	do { time(&current); } while (difftime(current, start) < 1);
+	do { time(&current); } while (difftime(current, start) < 10);
 	{
 		sync->waitForSignalling();
-		msg.sequenceNumber = 4;
+		msg.sequenceNumber = 6;
 		msg.type = ACK;
 		sync->finalizeSignalling();
 	}
+	time(&start);
+	do { time(&current); } while (difftime(current, start) < 10);
 
 
 
