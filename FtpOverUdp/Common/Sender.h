@@ -28,7 +28,7 @@ namespace Common
 		void normalizeCurrentWindow();
 		void finalizePayload();
 	public:
-		Sender(int socket, int serverId, int clientId, struct sockaddr_in serverAddress);
+		Sender(int socket, int serverId, int clientId, struct sockaddr_in destAddress);
 		void initializePayload(const char* completePayload, int payloadLength, int firstSequenceNumber, Msg* ackMsg);
 		void send();
 		void processAck();
