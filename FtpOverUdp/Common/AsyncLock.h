@@ -24,7 +24,8 @@ namespace Common
 		std::mutex writeLock;
 		std::condition_variable writeOperation;
 	public:
-		AsyncLock(bool startWithConsumption);
+		AsyncLock() : isConsumptionState(false) {}
+		AsyncLock(bool startWithConsumption) : isConsumptionState(startWithConsumption) {}
 
 		void waitForConsumption();
 		void finalizeConsumption();

@@ -143,8 +143,6 @@ void ServerThread::run()
 {
 	do // NOTE : currentMsg can only be null if the initial handshake is null, or ServerThread sets it to NULL.
 	{
-		outerSync.waitForConsumption();
-
 		switch (currentState) {
 		case INITIALIZING:
 			startHandshake();
@@ -208,6 +206,7 @@ void ServerThread::run()
 		}
 
 		outerSync.finalizeConsumption();
+		outerSync.waitForConsumption();
 	} while (currentState != TERMINATED);
 }
 
@@ -301,6 +300,7 @@ void ServerThread::startSender(Payload* payloadData)
 
 void ServerThread::dispatchToSender()
 {
+	std::cout << "ServerThread: ACK #" << std::to_string(currentMsg->sequenceNumber) << endl;
 	sender->processAck();
 	if (sender->isPayloadSent())
 		currentState = WAITING_FOR_REQUEST;
@@ -308,6 +308,16 @@ void ServerThread::dispatchToSender()
 
 int main(void)
 {
+	//AsyncLock lock(true);
+	//ThreadA consumption(&lock);
+	//ThreadB signalling(&lock);
+
+	//consumption.start();
+	//signalling.start();
+
+	//time_t start, current;
+	//time(&start); do { time(&current); } while (difftime(current, start) < 100);
+
 	WSADATA wsadata;
 	/* Initialize Windows Socket information */
 	if (WSAStartup(0x0202, &wsadata) != 0)
@@ -380,20 +390,15 @@ int main(void)
 	msg.type = HANDSHAKE;
 
 	int noOp;
-		int j = 0;
 	time_t start, current;
 	ServerThread* thread = new ServerThread(456, serverSock, ClientAddr, &msg);
 	AsyncLock* threadSync = thread->getSync();
 	thread->start();
 	
-	time(&start); do { time(&current); } while (difftime(current, start) < 3);
-	noOp = 0;
 	threadSync->waitForSignalling();
 	msg.type = COMPLETE_HANDSHAKE;
 	threadSync->finalizeSignalling();
 	
-	time(&start); do { time(&current); } while (difftime(current, start) < 3);
-	noOp = 0;
 	threadSync->waitForSignalling();
 	msg.type = GET_FILE;
 	msg.sequenceNumber = 5;
@@ -401,8 +406,6 @@ int main(void)
 	threadSync->finalizeSignalling();
 	
 	{
-		time(&start); do { time(&current); } while (difftime(current, start) < 3);
-		noOp = 0;
 		for (int i = 0; i < 3; i++) {
 			threadSync->waitForSignalling();
 			msg.type = ACK;
@@ -411,8 +414,6 @@ int main(void)
 		}
 	}
 	
-	time(&start); do { time(&current); } while (difftime(current, start) < 3);
-	noOp = 0;
 	for (int i = 3; i < 5; i++) {
 		threadSync->waitForSignalling();
 		msg.type = ACK;
@@ -420,8 +421,6 @@ int main(void)
 		threadSync->finalizeSignalling();
 	}
 	
-	time(&start); do { time(&current); } while (difftime(current, start) < 3);
-	noOp = 0;
 	threadSync->waitForSignalling();
 	msg.type = ACK;
 	msg.sequenceNumber = 3;

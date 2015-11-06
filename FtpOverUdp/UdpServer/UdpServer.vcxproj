@@ -66,6 +66,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="FtpServer.h" />
+    <ClInclude Include="InnerThread.h" />
     <ClInclude Include="ThreadA.h" />
     <ClInclude Include="ThreadB.h" />
     <ClInclude Include="ThreadedReceiver.h" />

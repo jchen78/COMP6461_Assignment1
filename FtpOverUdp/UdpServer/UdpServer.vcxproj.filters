@@ -27,6 +27,9 @@
     <ClInclude Include="ThreadB.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="InnerThread.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FtpServer.cpp">

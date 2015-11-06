@@ -3,11 +3,6 @@
 
 namespace Common
 {
-	AsyncLock::AsyncLock(bool startWithConsumption)
-	{
-		isConsumptionState = startWithConsumption;
-	}
-
 	void AsyncLock::waitForConsumption() {
 		std::unique_lock<std::mutex> locker(readLock);
 		readOperation.wait(locker, [&]() { return isConsumptionState; });
