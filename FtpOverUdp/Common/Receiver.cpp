@@ -14,6 +14,7 @@ namespace Common
 	void Receiver::startNewPayload(int sequenceSeed) {
 		this->sequenceSeed = sequenceSeed;
 		this->windowOrigin = 0;
+		this->totalPayloadSize = 0;
 		this->completedSet = {};
 		for (int i = 0; i < SEQUENCE_RANGE; i++)
 			this->currentWindow[i] = NULL;
@@ -22,6 +23,8 @@ namespace Common
 	void Receiver::handleMsg(Msg* msg) {
 		// ACK package
 		int sequenceNumber = msg->sequenceNumber;
+		int windowEnd = (windowOrigin + sequenceSeed) % SEQUENCE_RANGE + WINDOW_SIZE;
+
 		sendAck(sequenceNumber);
 
 		// Handle EOF
@@ -29,6 +32,9 @@ namespace Common
 			isComplete = true;
 			return;
 		}
+
+		if (!isSequenceNumberInWindow(sequenceNumber))
+			return;
 
 		// Register package in buffer
 		if (currentWindow[sequenceNumber] != NULL)
@@ -67,6 +73,15 @@ namespace Common
 			std::cerr << WSAGetLastError() << std::endl;
 			return;
 		}
+	}
+
+	bool Receiver::isSequenceNumberInWindow(int sequenceNumber) {
+		int currentHead = (windowOrigin + sequenceSeed) % SEQUENCE_RANGE;
+		int currentTail = currentHead + WINDOW_SIZE - 1;
+		if (sequenceNumber < currentHead)
+			sequenceNumber += SEQUENCE_RANGE;
+
+		return sequenceNumber >= currentHead && sequenceNumber <= currentTail;
 	}
 
 	bool Receiver::isPayloadComplete() {

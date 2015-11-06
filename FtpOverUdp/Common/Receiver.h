@@ -24,6 +24,7 @@ namespace Common
 
 		void sendAck(int sequenceNumber);
 		bool isEofMsg(Msg*);
+		bool isSequenceNumberInWindow(int);
 	public:
 		Receiver(int socket, int serverId, int clientId, struct sockaddr_in destAddr);
 		void startNewPayload(int sequenceSeed);

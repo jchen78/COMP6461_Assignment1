@@ -16,8 +16,7 @@
 #include "FtpServer.h"
 #include <stdlib.h>
 
-#include "ThreadA.h"
-#include "ThreadB.h"
+#include "Receiver.h"
 
 using namespace std;
 
@@ -369,13 +368,13 @@ int main(void)
 	
 	
 	//{
-	//	char payload[256 * 5];
-	//	memset(payload, ' ', 256 * 5);
-	//	payload[0] = 'A';
-	//	payload[256] = 'B';
-	//	payload[512] = 'C';
-	//	payload[768] = 'D';
-	//	payload[1024] = 'E';
+		char payload[256 * 5 - 6];
+		memset(payload, ' ', 256 * 5 - 6);
+		payload[0] = 'A';
+		payload[256] = 'B';
+		payload[512] = 'C';
+		payload[768] = 'D';
+		payload[1024] = 'E';
 	//	std::ofstream os("serverFiles\\testFile.txt", ios::out | ios::binary);
 	//	os.write(payload, 256 * 5);
 	//}
@@ -384,50 +383,62 @@ int main(void)
 	ClientAddr.sin_family = AF_INET;
 	ClientAddr.sin_addr.S_un.S_addr = *((unsigned long *)gethostbyname("AsusG551")->h_addr_list[0]);
 	ClientAddr.sin_port = htons(5000);
+
+	time_t start, current;
+	time(&start); do { time(&current); } while (difftime(current, start) < 3);
+	int noOp = 0;
+
 	Msg msg;
 	memset(&msg, 0, sizeof(msg));
 	msg.clientId = 123;
-	msg.type = HANDSHAKE;
+	msg.serverId = 456;
+	msg.type = RESP;
+	Receiver r = Common::Receiver(serverSock, 456, 123, ClientAddr);
+	r.startNewPayload(2);
 
-	int noOp;
-	time_t start, current;
-	ServerThread* thread = new ServerThread(456, serverSock, ClientAddr, &msg);
-	AsyncLock* threadSync = thread->getSync();
-	thread->start();
+	msg.sequenceNumber = 2;
+	msg.length = 256;
+	memcpy(msg.buffer, &payload[0], 256);
+	r.handleMsg(&msg);
 	
-	threadSync->waitForSignalling();
-	msg.type = COMPLETE_HANDSHAKE;
-	threadSync->finalizeSignalling();
-	
-	threadSync->waitForSignalling();
-	msg.type = GET_FILE;
 	msg.sequenceNumber = 5;
-	memcpy(msg.buffer, "testFile.txt", BUFFER_LENGTH);
-	threadSync->finalizeSignalling();
-	
-	{
-		for (int i = 0; i < 3; i++) {
-			threadSync->waitForSignalling();
-			msg.type = ACK;
-			msg.sequenceNumber = (5 + i) % SEQUENCE_RANGE;
-			threadSync->finalizeSignalling();
-		}
-	}
-	
-	for (int i = 3; i < 5; i++) {
-		threadSync->waitForSignalling();
-		msg.type = ACK;
-		msg.sequenceNumber = (5 + i) % SEQUENCE_RANGE;
-		threadSync->finalizeSignalling();
-	}
-	
-	threadSync->waitForSignalling();
-	msg.type = ACK;
+	msg.length = 256;
+	memcpy(msg.buffer, &payload[768], 256);
+	r.handleMsg(&msg);
+
 	msg.sequenceNumber = 3;
-	threadSync->finalizeSignalling();
-	
-	time(&start); do { time(&current); } while (difftime(current, start) < 3);
-	noOp = 0;
+	msg.length = 256;
+	memcpy(msg.buffer, &payload[256], 256);
+	r.handleMsg(&msg);
+
+	msg.sequenceNumber = 4;
+	msg.length = 256;
+	memcpy(msg.buffer, &payload[512], 256);
+	r.handleMsg(&msg);
+
+	msg.sequenceNumber = 2;
+	msg.length = 256;
+	memcpy(msg.buffer, &payload[0], 256);
+	r.handleMsg(&msg);
+
+	msg.sequenceNumber = 6;
+	msg.length = 250;
+	memcpy(msg.buffer, &payload[1024], 250);
+	r.handleMsg(&msg);
+
+	msg.sequenceNumber = 0;
+	msg.length = 4;
+	memset(msg.buffer, 0, 256);
+	strcpy(msg.buffer, "EOF");
+	msg.type = RESP_ERR;
+	r.handleMsg(&msg);
+
+	Payload* receivedData = r.getPayload();
+	for (int i = 0; i < 256 * 5 - 6; i++)
+		if (receivedData->data[i] != payload[i])
+			throw new exception();
+
+
 
 
 
