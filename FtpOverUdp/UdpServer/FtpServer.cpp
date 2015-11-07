@@ -14,7 +14,7 @@ using namespace std;
  *
  * @arg: void
  */
-FtpServer::FtpServer()
+FtpServer::FtpServer() : ioLock(AsyncLock(false))
 {
 	WSADATA wsadata;
 	/* Initialize Windows Socket information */
@@ -78,8 +78,8 @@ FtpServer::~FtpServer()
  */
 void FtpServer::start()
 {
-	while (true) /* Run forever */
-	{
+	Msg* currentRequest = NULL;
+	while (true) /* Run forever */ {
 		/* For each message:
 		 *		- log the message
 		 *		- if the server-id does not correspond to any server thread:
@@ -91,9 +91,82 @@ void FtpServer::start()
 		 *			- register the new server thread
 		 *		- retrieve the server thread
 		 *		- dispatch the message to the server thread
-		 *		- wait for next message
 		 */
+		currentRequest = getMessage();
+		log(describeMessage(currentRequest));
+		dispatchMessage(getServerId(currentRequest), currentRequest);
 	}
+}
+
+Msg* FtpServer::getMessage()
+{
+	char* buffer = new char[RCV_BUFFER_SIZE];
+	int bufferLength;
+	int addrLength = sizeof(ServerAddr);
+
+	/* Check the received Message Header */
+	if ((bufferLength = recvfrom(serverSock, buffer, RCV_BUFFER_SIZE, 0, (SOCKADDR *)&ServerAddr, &addrLength)) == SOCKET_ERROR)
+	{
+		cerr << "recvfrom(...) failed when getting message" << endl;
+		cerr << WSAGetLastError() << endl;
+		exit(1);
+	}
+
+	// must destruct after use!
+	Msg* msg = new Msg();
+	memcpy(msg, buffer, MSGHDRSIZE);
+	memcpy(msg->buffer, buffer + MSGHDRSIZE, msg->length);
+
+	delete[] buffer;
+	return msg;
+}
+
+int FtpServer::getServerId(Msg* message) {
+	int serverId = message->serverId;
+	if (!serverIdExists(serverId))
+		return createServerThread();
+
+	return serverId;
+}
+
+bool FtpServer::serverIdExists(int serverId) {
+	return threadLocks.find(serverId) == threadLocks.end();
+}
+
+int FtpServer::createServerThread() {
+	int serverId = 0;
+	do {
+		srand(time(NULL));
+		serverId = rand() % 256;
+	} while (serverIdExists(serverId));
+
+	Msg msg = Msg();
+	std::memset(&msg, 0, sizeof(msg));
+	messages.insert(std::make_pair(serverId, msg));
+	ServerThread* newThread = new ServerThread(serverId, serverSock, ClientAddr, &messages[serverId], &ioLock);
+	threadLocks.insert(std::make_pair(serverId, newThread->getSync()));
+	newThread->start();
+
+	return serverId;
+}
+
+void FtpServer::dispatchMessage(int serverId, Msg* message) {
+	message->serverId = serverId;
+	log(string("About to dispatch message: ").append(describeMessage(message)));
+	
+	AsyncLock* threadLock = &threadLocks[serverId];
+	threadLock->waitForSignalling();
+	Msg* threadMsg = &messages[serverId];
+	memcpy(threadMsg, message, sizeof(message));
+	threadLock->finalizeSignalling();
+	log(string("Finished dispatching message: ").append(describeMessage(message)));
+}
+
+std::string FtpServer::describeMessage(Msg* message) {
+	return string("ServerId: ").append(std::to_string(message->serverId))
+		.append("; ClientId: ").append(std::to_string(message->clientId))
+		.append("; Type: ").append(std::to_string(message->type))
+		.append("; Sequence: ").append(std::to_string(message->sequenceNumber));
 }
 
 void FtpServer::log(const std::string &logItem)
@@ -306,32 +379,4 @@ int main(void)
 	//ts.start();
 
 	//return 0;
-}
-
-Msg* msgGet(char* buffer)
-{
-	// must destruct after use!
-	Msg* msg = new Msg();
-	memcpy(msg, buffer, MSGHDRSIZE);
-	memcpy(msg->buffer, buffer + MSGHDRSIZE, msg->length);
-	
-	delete[] buffer;
-	return msg;
-}
-
-char* getRawBuffer(struct sockaddr_in ServAddr, int clientSock)
-{
-	char* buffer = new char[RCV_BUFFER_SIZE];
-	int bufferLength;
-	int addrLength = sizeof(ServAddr);
-
-	/* Check the received Message Header */
-	if ((bufferLength = recvfrom(clientSock, buffer, RCV_BUFFER_SIZE, 0, (SOCKADDR *)&ServAddr, &addrLength)) == SOCKET_ERROR)
-	{
-		cerr << "recvfrom(...) failed when getting message" << endl;
-		cerr << WSAGetLastError() << endl;
-		exit(1);
-	}
-
-	return buffer;
 }

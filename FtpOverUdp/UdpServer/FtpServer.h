@@ -14,6 +14,7 @@
 #define TRACE 1
 
 #include "ServerThread.h"
+#include <map>
 
 using namespace Common;
 
@@ -49,9 +50,18 @@ class FtpServer
 		unsigned short ServerPort;				/* Server port */
 		int clientLen;							/* Length of Server address data structure */
 		char serverName[HOSTNAME_LENGTH];		/* Server Name */
-		char* filesDirectory;
+		char filesDirectory[13];
+		class AsyncLock ioLock;
+		class std::map<int, Msg> messages;
+		class std::map<int, AsyncLock> threadLocks;
 
+		Msg* getMessage();
 		void log(const std::string &logItem);	/* */
+		void dispatchMessage(int, Msg*);
+		int getServerId(Msg*);
+		bool serverIdExists(int);
+		int createServerThread();
+		std::string describeMessage(Msg*);
 	public:
 		FtpServer();
 		~FtpServer();
