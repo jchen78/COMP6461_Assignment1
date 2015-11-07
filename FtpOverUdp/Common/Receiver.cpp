@@ -9,6 +9,7 @@ namespace Common
 		this->clientId = clientId;
 		this->destAddr = destAddr;
 		this->addrLength = sizeof(destAddr);
+		this->isComplete = false;
 	}
 
 	void Receiver::startNewPayload(int sequenceSeed) {
@@ -18,6 +19,8 @@ namespace Common
 		this->completedSet = {};
 		for (int i = 0; i < SEQUENCE_RANGE; i++)
 			this->currentWindow[i] = NULL;
+
+		sendAck(sequenceSeed);
 	}
 
 	void Receiver::handleMsg(Msg* msg) {

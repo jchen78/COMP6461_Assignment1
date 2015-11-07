@@ -18,6 +18,7 @@
 #include <Common.h>
 #include <Sender.h>
 #include <Thread.h>
+#include <Receiver.h>
 
 using namespace Common;
 
@@ -81,7 +82,8 @@ private:
 	int serverId;
 	int socket;
 	struct sockaddr_in address;
-	char* filesDirectory;
+	char filesDirectory[13];
+	AsyncLock* ioLock;
 
 	// Communication with server multiplexer
 	class AsyncLock outerSync;
@@ -89,7 +91,8 @@ private:
 	struct Msg* currentMsg;
 
 	class Sender* sender;
-	std::string originalFileName;
+	class Receiver* receiver;
+	std::string filename;
 	SenderThread* currentResponse;
 	bool* isResponseComplete;
 
@@ -102,9 +105,12 @@ private:
 	Payload* getFileContents(const char* fileName);
 	void startSender(Payload* contents);
 	void dispatchToSender();
+	void getFile();
+	void dispatchToReceiver();
+	void saveFile(Payload* fileContents);
 public:
 	/* NOTE: ServerThread will need to share an I/O mutex */
-	ServerThread(int serverId, int serverSocket, struct sockaddr_in serverAddress, Msg* initialHandshake);
+	ServerThread(int serverId, int serverSocket, struct sockaddr_in clientAddress, Msg* initialHandshake, AsyncLock* ioLock);
 	int getId();
 	AsyncLock* getSync();
 	virtual void run();
@@ -126,15 +132,13 @@ public:
 	*		- If state is WaitingForRequest & message is valid GetFile:
 	*			- Set state to Sending
 	*			- Initialize Sender field
-	*			- Start Sender
-	*		- If state is WaitingForRequest & message is Put (note: if file already exists, add random suffix to filename):
+	*		- If state is WaitingForRequest & message is Post (note: if file already exists, add random suffix to filename):
 	*			- Set state to Receiving
 	*			- Initialize (as yet not-coded) Receiver field
-	*			- Start Receiver
 	*			- Send ACK
-	*		- If state is WaitingForRequest & message is invalid Post:
+	*		- If state is WaitingForRequest & message is invalid Put:
 	*			- Send RESP_ERR
-	*		- If state is WaitingForRequest & message is valid Post:
+	*		- If state is WaitingForRequest & message is valid Put:
 	*			- Set state to Renaming
 	*			- Set originalFileName
 	*			- Send ACK
@@ -174,16 +178,11 @@ public:
 	*			- Exit (no response & no extra timeout)
 	*/
 	virtual ~ServerThread() {
-		if (currentMsg != NULL)
-			delete currentMsg;
-
 		if (sender != NULL)
 			delete sender;
 
 		if (currentResponse != NULL)
 			delete currentResponse;
-
-		delete[] filesDirectory;
 	}
 };
 

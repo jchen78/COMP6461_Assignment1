@@ -9,7 +9,7 @@ class ThreadA : public Common::Thread
 private:
 	Common::AsyncLock* lock;
 	InnerThread innerThreads[100];
-	AsyncLock innerLocks[100];
+	Common::AsyncLock innerLocks[100];
 public:
 	ThreadA(Common::AsyncLock* sharedLock) : lock(sharedLock) {
 		for (int i = 0; i < 100; i++) {

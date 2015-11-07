@@ -15,6 +15,7 @@
 #include <process.h>
 #include "FtpServer.h"
 #include <stdlib.h>
+#include <Shlwapi.h>
 
 #include "Receiver.h"
 
@@ -122,16 +123,18 @@ void FtpServer::log(const std::string &logItem)
 }
 
 /*-------------------------------ServerThread Class--------------------------------*/
-ServerThread::ServerThread(int serverId, int serverSocket, struct sockaddr_in serverAddress, Msg* initialHandshake) :
+ServerThread::ServerThread(int serverId, int serverSocket, struct sockaddr_in clientAddress, Msg* initialHandshake, AsyncLock* ioLock) :
 	outerSync(true)
 {
 	this->serverId = serverId;
 	this->socket = serverSocket;
-	this->address = serverAddress;
+	this->address = clientAddress;
 	this->currentState = INITIALIZING;
 	this->currentMsg = initialHandshake;
 	this->sender = new Sender(socket, serverId, currentMsg->clientId, address);
-	this->filesDirectory = "serverFiles\\";
+	this->receiver = new Receiver(socket, serverId, currentMsg->clientId, address);
+	this->ioLock = ioLock;
+	strcpy(this->filesDirectory, "serverFiles\\");
 }
 
 int ServerThread::getId() { return serverId; }
@@ -159,11 +162,15 @@ void ServerThread::run()
 			case GET_FILE:
 				sendFile();
 				break;
+			case POST:
+				getFile();
+				break;
 			case PUT:
 				// TODO: Complete action
 				break;
-			case POST:
-				// TODO: Complete action
+			case TERMINATE:
+				// TODO: Send ACK
+				currentState = EXITING;
 				break;
 			default:
 				// TODO: Send RESP_ERR
@@ -178,10 +185,8 @@ void ServerThread::run()
 			}
 			break;
 		case RECEIVING:
-			if (currentMsg->type == RESP) {
-				// TODO: Complete action
-			} else if (currentMsg->type == RESP_ERR && strcmp(currentMsg->buffer, "End of file.") == 0) {
-				// TODO: Complete action
+			if (currentMsg->type == RESP || currentMsg->type == RESP_ERR && strcmp(currentMsg->buffer, "EOF") == 0) {
+				dispatchToReceiver();
 			} else {
 				// TODO: Send RESP_ERR
 			}
@@ -189,7 +194,7 @@ void ServerThread::run()
 		case RENAMING:
 			if (currentMsg->type == RESP) {
 				// TODO: Complete action
-			} else if (currentMsg->type == TERMINATE && strcmp(currentMsg->buffer, originalFileName.c_str()) == 0) {
+			} else if (currentMsg->type == TERMINATE && strcmp(currentMsg->buffer, filename.c_str()) == 0) {
 				// TODO: Complete action
 			} else {
 				// TODO: Send RESP_ERR
@@ -198,6 +203,7 @@ void ServerThread::run()
 		case EXITING:
 			if (currentMsg->type == ACK) {
 				// TODO: Complete action (incl. set state to terminated)
+				currentState = TERMINATED;
 			} else {
 				// TODO: Send RESP_ERR
 			}
@@ -205,8 +211,11 @@ void ServerThread::run()
 		}
 
 		outerSync.finalizeConsumption();
-		outerSync.waitForConsumption();
+		if (currentState != TERMINATED)
+			outerSync.waitForConsumption();
 	} while (currentState != TERMINATED);
+
+	delete this;
 }
 
 void ServerThread::startHandshake()
@@ -297,6 +306,45 @@ void ServerThread::startSender(Payload* payloadData)
 	sender->send();
 }
 
+void ServerThread::getFile() {
+	currentState = RECEIVING;
+	receiver->startNewPayload(currentMsg->sequenceNumber);
+	filename = string(currentMsg->buffer);
+}
+
+void ServerThread::dispatchToReceiver() {
+	receiver->handleMsg(currentMsg);
+	if (receiver->isPayloadComplete()) {
+		currentState = WAITING_FOR_REQUEST;
+		saveFile(receiver->getPayload());
+	}
+}
+
+void ServerThread::saveFile(Payload* fileContents) {
+	ioLock->waitForSignalling();
+
+	// Set filename
+	std::string completeFilename = string(filesDirectory).append(filename);
+	const char* extension = PathFindExtension(filename.c_str());
+	while (PathFileExists(completeFilename.c_str())) {
+		const char* currentFilenameTemp = completeFilename.c_str();
+		char *currentFilename = new char[strlen(currentFilenameTemp)];
+		strcpy(currentFilename, currentFilenameTemp);
+		PathRemoveExtension(currentFilename);
+		size_t position = filename.find(".");
+		completeFilename = string(currentFilename).append("_").append(extension);
+	}
+
+	{
+		std::ofstream writer(completeFilename, ios::out | ios::binary);
+		writer.write(fileContents->data, fileContents->length);
+	}
+
+	ioLock->finalizeSignalling();
+	ioLock->waitForConsumption();
+	ioLock->finalizeConsumption();
+}
+
 void ServerThread::dispatchToSender()
 {
 	std::cout << "ServerThread: ACK #" << std::to_string(currentMsg->sequenceNumber) << endl;
@@ -371,9 +419,21 @@ int main(void)
 		char payload[256 * 5 - 6];
 		memset(payload, ' ', 256 * 5 - 6);
 		payload[0] = 'A';
+		payload[254] = '\r';
+		payload[255] = '\n';
+
 		payload[256] = 'B';
+		payload[510] = '\r';
+		payload[511] = '\n';
+
 		payload[512] = 'C';
+		payload[766] = '\r';
+		payload[767] = '\n';
+
 		payload[768] = 'D';
+		payload[1022] = '\r';
+		payload[1023] = '\n';
+
 		payload[1024] = 'E';
 	//	std::ofstream os("serverFiles\\testFile.txt", ios::out | ios::binary);
 	//	os.write(payload, 256 * 5);
@@ -384,60 +444,95 @@ int main(void)
 	ClientAddr.sin_addr.S_un.S_addr = *((unsigned long *)gethostbyname("AsusG551")->h_addr_list[0]);
 	ClientAddr.sin_port = htons(5000);
 
-	time_t start, current;
-	time(&start); do { time(&current); } while (difftime(current, start) < 3);
-	int noOp = 0;
+	//time_t start, current;
+	//time(&start); do { time(&current); } while (difftime(current, start) < 3);
+	//int noOp = 0;
 
 	Msg msg;
 	memset(&msg, 0, sizeof(msg));
 	msg.clientId = 123;
 	msg.serverId = 456;
-	msg.type = RESP;
-	Receiver r = Common::Receiver(serverSock, 456, 123, ClientAddr);
-	r.startNewPayload(2);
+	msg.type = HANDSHAKE;
+	msg.length = 0;
 
+	AsyncLock ioLock;
+	ServerThread* st = new ServerThread(456, serverSock, ClientAddr, &msg, &ioLock);
+	AsyncLock* stl = st->getSync();
+	st->start();
+
+	stl->waitForSignalling();
+	msg.type = COMPLETE_HANDSHAKE;
+	stl->finalizeSignalling();
+
+	stl->waitForSignalling();
+	msg.type = POST;
 	msg.sequenceNumber = 2;
-	msg.length = 256;
-	memcpy(msg.buffer, &payload[0], 256);
-	r.handleMsg(&msg);
+	strcpy(msg.buffer, "receiverTest.txt");
+	stl->finalizeSignalling();
 	
+	stl->waitForSignalling();
+	msg.type = RESP;
 	msg.sequenceNumber = 5;
 	msg.length = 256;
 	memcpy(msg.buffer, &payload[768], 256);
-	r.handleMsg(&msg);
-
-	msg.sequenceNumber = 3;
-	msg.length = 256;
-	memcpy(msg.buffer, &payload[256], 256);
-	r.handleMsg(&msg);
-
-	msg.sequenceNumber = 4;
-	msg.length = 256;
-	memcpy(msg.buffer, &payload[512], 256);
-	r.handleMsg(&msg);
-
+	stl->finalizeSignalling();
+	
+	stl->waitForSignalling();
+	msg.type = RESP;
 	msg.sequenceNumber = 2;
 	msg.length = 256;
 	memcpy(msg.buffer, &payload[0], 256);
-	r.handleMsg(&msg);
+	stl->finalizeSignalling();
+	
+	stl->waitForSignalling();
+	msg.type = RESP;
+	msg.sequenceNumber = 5;
+	msg.length = 256;
+	memcpy(msg.buffer, &payload[768], 256);
+	stl->finalizeSignalling();
 
+	stl->waitForSignalling();
+	msg.type = RESP;
+	msg.sequenceNumber = 3;
+	msg.length = 256;
+	memcpy(msg.buffer, &payload[256], 256);
+	stl->finalizeSignalling();
+
+	stl->waitForSignalling();
+	msg.type = RESP;
+	msg.sequenceNumber = 4;
+	msg.length = 256;
+	memcpy(msg.buffer, &payload[512], 256);
+	stl->finalizeSignalling();
+
+	stl->waitForSignalling();
+	msg.type = RESP;
 	msg.sequenceNumber = 6;
 	msg.length = 250;
 	memcpy(msg.buffer, &payload[1024], 250);
-	r.handleMsg(&msg);
+	stl->finalizeSignalling();
 
+	stl->waitForSignalling();
+	msg.type = RESP_ERR;
 	msg.sequenceNumber = 0;
 	msg.length = 4;
 	memset(msg.buffer, 0, 256);
 	strcpy(msg.buffer, "EOF");
-	msg.type = RESP_ERR;
-	r.handleMsg(&msg);
+	stl->finalizeSignalling();
 
-	Payload* receivedData = r.getPayload();
-	for (int i = 0; i < 256 * 5 - 6; i++)
-		if (receivedData->data[i] != payload[i])
-			throw new exception();
+	stl->waitForSignalling();
+	msg.type = TERMINATE;
+	msg.sequenceNumber = 0;
+	msg.length = 4;
+	memset(msg.buffer, 0, 256);
+	stl->finalizeSignalling();
 
+	stl->waitForSignalling();
+	msg.type = ACK;
+	msg.sequenceNumber = 0;
+	msg.length = 4;
+	memset(msg.buffer, 0, 256);
+	stl->finalizeSignalling();
 
 
 
