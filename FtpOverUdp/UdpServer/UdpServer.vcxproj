@@ -67,13 +67,13 @@
   <ItemGroup>
     <ClInclude Include="FtpServer.h" />
     <ClInclude Include="InnerThread.h" />
+    <ClInclude Include="ServerThread.h" />
     <ClInclude Include="ThreadA.h" />
     <ClInclude Include="ThreadB.h" />
-    <ClInclude Include="ThreadedReceiver.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FtpServer.cpp" />
-    <ClCompile Include="ThreadedReceiver.cpp" />
+    <ClCompile Include="ServerThread.cpp" />
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Common\Common.vcxproj">

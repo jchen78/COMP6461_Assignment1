@@ -18,9 +18,6 @@
     <ClInclude Include="FtpServer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ThreadedReceiver.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="ThreadA.h">
       <Filter>Header Files</Filter>
     </ClInclude>
@@ -30,12 +27,15 @@
     <ClInclude Include="InnerThread.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="ServerThread.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FtpServer.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="ThreadedReceiver.cpp">
+    <ClCompile Include="ServerThread.cpp">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>
