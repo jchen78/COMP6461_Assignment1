@@ -9,10 +9,10 @@ namespace Common
 		this->clientId = clientId;
 		this->destAddr = destAddr;
 		this->addrLength = sizeof(destAddr);
-		this->isComplete = false;
 	}
 
 	void Receiver::startNewPayload(int sequenceSeed) {
+		this->isComplete = false;
 		this->sequenceSeed = sequenceSeed;
 		this->windowOrigin = 0;
 		this->totalPayloadSize = 0;
@@ -44,8 +44,13 @@ namespace Common
 			return;
 
 		int currentPayloadLength = msg->length;
-		currentWindow[sequenceNumber] = new char[BUFFER_LENGTH];
-		memcpy(currentWindow[sequenceNumber], msg->buffer, currentPayloadLength);
+		char* currentData = new char[currentPayloadLength];
+		memcpy(currentData, msg->buffer, currentPayloadLength);
+
+		Payload* currentPayload = new Payload();
+		currentPayload->length = currentPayloadLength;
+		currentPayload->data = currentData;
+		currentWindow[sequenceNumber] = currentPayload;
 		totalPayloadSize += currentPayloadLength; // It doesn't matter if it's out of order.
 
 		// Normalize buffer
@@ -98,12 +103,11 @@ namespace Common
 		Payload* payload = new Payload();
 		payload->length = totalPayloadSize;
 		payload->data = new char[totalPayloadSize];
-		for (int currentIndex = 0, currentLength; !completedSet.empty(); currentIndex += BUFFER_LENGTH) {
-			currentLength = totalPayloadSize - currentIndex;
-			if (currentLength > BUFFER_LENGTH)
-				currentLength = BUFFER_LENGTH;
-
-			memcpy(&payload->data[currentIndex], completedSet.front(), currentLength);
+		int currentIndex = 0;
+		while (!completedSet.empty()) {
+			Payload currentPayload = *completedSet.front();
+			memcpy(&payload->data[currentIndex], currentPayload.data, currentPayload.length);
+			currentIndex += currentPayload.length;
 			completedSet.pop();
 		}
 

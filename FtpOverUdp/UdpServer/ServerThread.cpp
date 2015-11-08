@@ -16,8 +16,6 @@ outerSync(true, serverId)
 	this->address = clientAddress;
 	this->currentState = INITIALIZING;
 	this->currentMsg = initialHandshake;
-	this->sender = new Sender(socket, serverId, currentMsg->clientId, address);
-	this->receiver = new Receiver(socket, serverId, currentMsg->clientId, address);
 	this->ioLock = ioLock;
 	strcpy(this->filesDirectory, "serverFiles\\");
 }
@@ -115,6 +113,8 @@ void ServerThread::startHandshake()
 {
 	currentState = HANDSHAKING;
 	isResponseComplete = new bool(false);
+	sender = new Sender(socket, serverId, currentMsg->clientId, address);
+	receiver = new Receiver(socket, serverId, currentMsg->clientId, address);
 	currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, isResponseComplete, HANDSHAKE, serverId % SEQUENCE_RANGE, "", 0);
 	currentResponse->start();
 }

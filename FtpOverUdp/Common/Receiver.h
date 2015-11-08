@@ -20,9 +20,9 @@ namespace Common
 		struct sockaddr_in destAddr;
 		int addrLength;
 
-		std::queue<char*> completedSet;
+		std::queue<Payload*> completedSet;
 		int totalPayloadSize;
-		char *currentWindow[SEQUENCE_RANGE];
+		Payload *currentWindow[SEQUENCE_RANGE];
 		int sequenceSeed;
 		int windowOrigin;
 		bool isComplete;
