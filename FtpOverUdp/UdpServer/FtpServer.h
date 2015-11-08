@@ -53,7 +53,7 @@ class FtpServer
 		char filesDirectory[13];
 		class AsyncLock ioLock;
 		class std::map<int, Msg> messages;
-		class std::map<int, AsyncLock> threadLocks;
+		class std::map<int, AsyncLock*> threadLocks;
 
 		Msg* getMessage();
 		void log(const std::string &logItem);	/* */

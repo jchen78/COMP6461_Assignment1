@@ -4,6 +4,7 @@
 namespace Common
 {
 	void AsyncLock::waitForConsumption() {
+		id;
 		std::unique_lock<std::mutex> locker(readLock);
 		readOperation.wait(locker, [&]() { return isConsumptionState; });
 	}
@@ -14,6 +15,7 @@ namespace Common
 	}
 
 	void AsyncLock::waitForSignalling() {
+		id;
 		std::unique_lock<std::mutex> locker(writeLock);
 		writeOperation.wait(locker, [&]() { return !isConsumptionState; });
 	}

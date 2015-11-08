@@ -1,8 +1,13 @@
 #pragma once
 
+#ifdef COMMON_EXPORTS
+#define COMMON_API __declspec(dllexport)
+#else
+#define COMMON_API __declspec(dllimport)
+#endif
+
 #include <queue>
 #include "Common.h"
-#include "AsyncLock.h"
 
 namespace Common
 {

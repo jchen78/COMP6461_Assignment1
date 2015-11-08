@@ -16,6 +16,7 @@ namespace Common
 	{
 	private:
 		bool isConsumptionState;
+		int id;
 		std::mutex switchLock;
 
 		std::mutex readLock;
@@ -24,8 +25,8 @@ namespace Common
 		std::mutex writeLock;
 		std::condition_variable writeOperation;
 	public:
-		AsyncLock() : isConsumptionState(false) {}
-		AsyncLock(bool startWithConsumption) : isConsumptionState(startWithConsumption) {}
+		AsyncLock(AsyncLock &) = delete;
+		AsyncLock(bool startWithConsumption, int id) : id(id), isConsumptionState(startWithConsumption) {}
 
 		void waitForConsumption();
 		void finalizeConsumption();

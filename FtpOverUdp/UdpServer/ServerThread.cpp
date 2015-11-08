@@ -9,7 +9,7 @@ using namespace std;
 
 /*-------------------------------ServerThread Class--------------------------------*/
 ServerThread::ServerThread(int serverId, int serverSocket, struct sockaddr_in clientAddress, Msg* initialHandshake, AsyncLock* ioLock) :
-outerSync(true)
+outerSync(true, serverId)
 {
 	this->serverId = serverId;
 	this->socket = serverSocket;
@@ -32,6 +32,9 @@ void ServerThread::run()
 	{
 		switch (currentState) {
 		case INITIALIZING:
+			currentState = STARTING_HANDSHAKE;
+			break;
+		case STARTING_HANDSHAKE:
 			startHandshake();
 			break;
 		case HANDSHAKING:
@@ -112,7 +115,7 @@ void ServerThread::startHandshake()
 {
 	currentState = HANDSHAKING;
 	isResponseComplete = new bool(false);
-	currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, isResponseComplete, HANDSHAKE, 0, "", 0);
+	currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, isResponseComplete, HANDSHAKE, serverId % SEQUENCE_RANGE, "", 0);
 	currentResponse->start();
 }
 
@@ -143,8 +146,10 @@ Payload* ServerThread::getDirectoryContents()
 	{
 		if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
 		{
-			payloadData.push(ffd.cFileName);
-			payloadLength += strlen(ffd.cFileName) + 1;
+			char* currentFilename = new char[20];
+			memcpy(currentFilename, ffd.cFileName, 20);
+			payloadData.push(currentFilename);
+			payloadLength += strlen(currentFilename) + 1;
 		}
 	} while (FindNextFile(hFind, &ffd) != 0);
 
@@ -157,6 +162,8 @@ Payload* ServerThread::getDirectoryContents()
 		currentIndex += strlen(payloadData.front()) + 1;
 		if (currentIndex > payloadLength)
 			throw new exception("More files than expected. Please retry");
+
+		payloadData.pop();
 	}
 
 	return payloadContent;

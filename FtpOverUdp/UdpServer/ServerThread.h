@@ -10,6 +10,7 @@ using namespace Common;
 
 typedef enum {
 	INITIALIZING,
+	STARTING_HANDSHAKE,
 	HANDSHAKING,
 	WAITING_FOR_REQUEST,
 	SENDING,

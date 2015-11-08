@@ -29,8 +29,10 @@ namespace Common
 
 		completePayload = new char[numberOfPackets * BUFFER_LENGTH];
 		memcpy(completePayload, messageContents, messageLength);
-		for (int i = 0; i < SEQUENCE_RANGE; i++)
+		for (int i = 0; i < SEQUENCE_RANGE; i++) {
 			currentWindow[i] = NULL;
+			windowState[i] = NULL;
+		}
 
 		currentWindowOrigin = 0;
 		isComplete = false;
@@ -51,7 +53,7 @@ namespace Common
 		for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin + i < numberOfPackets; i++) {
 			int currentIndex = (currentWindowOrigin + sequenceSeed + i) % SEQUENCE_RANGE;
 			int currentPayloadIndex = (currentWindowOrigin + i) % SEQUENCE_RANGE;
-			if (currentWindow[currentIndex] == NULL) {
+			if (windowState[currentIndex] == NULL) {
 				bool* currentFlag = new bool(false);
 				int currentChar = currentPayloadIndex * BUFFER_LENGTH;
 				int currentSize = currentPayloadIndex == (numberOfPackets - 1) ? (payloadSize - currentChar - 1) : BUFFER_LENGTH;
@@ -73,8 +75,10 @@ namespace Common
 			return;
 		}
 
-		for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin < numberOfPackets && currentWindow[(currentWindowOrigin + sequenceSeed) % SEQUENCE_RANGE] == NULL; i++)
+		for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin < numberOfPackets && currentWindow[(currentWindowOrigin + sequenceSeed) % SEQUENCE_RANGE] == NULL; i++) {
+			windowState[(currentWindowOrigin + sequenceSeed) % SEQUENCE_RANGE] = NULL;
 			currentWindowOrigin++;
+		}
 
 		if (currentWindowOrigin == numberOfPackets)
 			finalizePayload();
