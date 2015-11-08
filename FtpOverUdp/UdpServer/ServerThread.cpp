@@ -134,6 +134,8 @@ void ServerThread::sendList()
 
 Payload* ServerThread::getDirectoryContents()
 {
+	ioLock->waitForSignalling();
+
 	queue<char*> payloadData;
 	int payloadLength = 0;
 	// Code adapted from https://msdn.microsoft.com/en-us/library/windows/desktop/aa365200(v=vs.85).aspx
@@ -166,6 +168,9 @@ Payload* ServerThread::getDirectoryContents()
 		payloadData.pop();
 	}
 
+	ioLock->finalizeSignalling();
+	ioLock->finalizeConsumption();
+
 	return payloadContent;
 }
 
@@ -181,6 +186,8 @@ void ServerThread::sendFile()
 
 Payload* ServerThread::getFileContents(const char* fileName)
 {
+	ioLock->waitForSignalling();
+
 	ifstream fileToRead(string(filesDirectory).append(fileName), ios::binary);
 	if (!fileToRead)
 		throw new exception("File not found");
@@ -194,6 +201,9 @@ Payload* ServerThread::getFileContents(const char* fileName)
 	fileToRead.read(contents->data, size);
 	fileToRead.close();
 
+	ioLock->finalizeSignalling();
+	ioLock->finalizeConsumption();
+
 	return contents;
 }
 
@@ -206,7 +216,7 @@ void ServerThread::startSender(Payload* payloadData)
 void ServerThread::getFile() {
 	currentState = RECEIVING;
 	receiver->startNewPayload(currentMsg->sequenceNumber);
-	filename = string(currentMsg->buffer);
+	filename = string(currentMsg->buffer, currentMsg->buffer + currentMsg->length);
 }
 
 void ServerThread::dispatchToReceiver() {
@@ -238,7 +248,6 @@ void ServerThread::saveFile(Payload* fileContents) {
 	}
 
 	ioLock->finalizeSignalling();
-	ioLock->waitForConsumption();
 	ioLock->finalizeConsumption();
 }
 
