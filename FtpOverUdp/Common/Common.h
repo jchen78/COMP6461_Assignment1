@@ -30,8 +30,8 @@ typedef enum
 struct __declspec(dllexport) Msg
 {
 public:
-	int clientId;
-	int serverId;
+	int  clientId;
+	int  serverId;
 	Type type;
 	int  length;
 	int  sequenceNumber;

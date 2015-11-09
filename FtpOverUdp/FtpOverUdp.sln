@@ -16,6 +16,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Pilot", "Pilot\Pilot.vcxpro
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "UdpServer", "UdpServer\UdpServer.vcxproj", "{A9662993-C64D-48F8-8B91-8EB8ADB9C0DA}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "UdpClientMuxer", "UdpClientMuxer\UdpClientMuxer.vcxproj", "{DA5283FC-B559-4FAB-8477-C095D10A2B70}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -59,6 +61,14 @@ Global
 		{A9662993-C64D-48F8-8B91-8EB8ADB9C0DA}.Release|Win32.ActiveCfg = Release|Win32
 		{A9662993-C64D-48F8-8B91-8EB8ADB9C0DA}.Release|Win32.Build.0 = Release|Win32
 		{A9662993-C64D-48F8-8B91-8EB8ADB9C0DA}.Release|x64.ActiveCfg = Release|Win32
+		{DA5283FC-B559-4FAB-8477-C095D10A2B70}.Debug|ARM.ActiveCfg = Debug|Win32
+		{DA5283FC-B559-4FAB-8477-C095D10A2B70}.Debug|Win32.ActiveCfg = Debug|Win32
+		{DA5283FC-B559-4FAB-8477-C095D10A2B70}.Debug|Win32.Build.0 = Debug|Win32
+		{DA5283FC-B559-4FAB-8477-C095D10A2B70}.Debug|x64.ActiveCfg = Debug|Win32
+		{DA5283FC-B559-4FAB-8477-C095D10A2B70}.Release|ARM.ActiveCfg = Release|Win32
+		{DA5283FC-B559-4FAB-8477-C095D10A2B70}.Release|Win32.ActiveCfg = Release|Win32
+		{DA5283FC-B559-4FAB-8477-C095D10A2B70}.Release|Win32.Build.0 = Release|Win32
+		{DA5283FC-B559-4FAB-8477-C095D10A2B70}.Release|x64.ActiveCfg = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
