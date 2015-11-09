@@ -4,8 +4,11 @@
 #include "stdafx.h"
 #include <string>
 #include <iostream>
+#include <map>
 #include <winsock.h>
-#include "Common.h"
+#include <Common.h>
+#include "ClientListener.h"
+#include "RouterListener.h"
 
 #define CLIENT_PORT 5002
 #define FROM_ROUTER_PORT 5001
@@ -81,6 +84,11 @@ int _tmain(int argc, _TCHAR* argv[])
 	memset(&routerAddr, 0, sizeof(routerAddr));
 	routerAddr.sin_family = AF_INET;
 	routerAddr.sin_addr.S_un.S_addr = ResolveName(hostname);
+
+	ClientListener cl = ClientListener(clientSocket, fromRouterSocket, routerAddr);
+	RouterListener rl = RouterListener(fromRouterSocket, clientSocket, cl.getMap());
+	rl.start();
+	cl.start();
 
 	while (true);
 
