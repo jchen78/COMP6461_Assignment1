@@ -11,54 +11,16 @@
 #include <fstream>
 #include <climits>
 #include <windows.h>
+#include <Common.h>
 
 using namespace std;
 
 #pragma comment(lib, "Ws2_32.lib")
 #define HOSTNAME_LENGTH 20
 #define FILENAME_LENGTH 20
-#define HANDSHAKE_PORT 5001
-#define BUFFER_LENGTH 256
+#define HANDSHAKE_PORT 5002
 #define RCV_BUFFER_SIZE 512
-#define MSGHDRSIZE 12
-#define SEQUENCE_RANGE 2
 #define TRACE 1
-
-/* Types of Messages */
-typedef enum
-{
-	HANDSHAKE = 1,
-	COMPLETE_HANDSHAKE = 2,
-	REQ_LIST = 5,
-	REQ_GET = 6,
-	RESP = 10,
-	RESP_ERR = 12,
-	PUT = 15,
-	TERMINATE = 20
-} Type;
-
-/* Structure of Request */
-typedef struct
-{
-	char hostname[HOSTNAME_LENGTH];
-	char filename[FILENAME_LENGTH];
-} Req;  
-
-/* Buffer for uploading file contents */
-typedef struct
-{
-	char dataBuffer[BUFFER_LENGTH];
-} DataContent; //For Put Operation
-
-/* Message format used for sending and receiving */
-typedef struct
-{
-	Type type;
-	int  length; /* length of effective bytes in the buffer */
-	int  sequenceNumber;
-	char buffer[BUFFER_LENGTH];
-	char dataBuffer[BUFFER_LENGTH];
-} Msg; 
 
 /* FtpClient Class */
 class FtpClient
@@ -73,7 +35,6 @@ class FtpClient
 		unsigned short ServPort;		/* Server port */
 		unsigned short ClientPort;		/* Client port */
 		char hostName[HOSTNAME_LENGTH];	/* Host Name */
-		Req reqMessage;					/* Variable to store Request Message */
 		Msg sendMsg,receiveMsg;			/* Message structure variables for Sending and Receiving data */
 		WSADATA wsaData;				/* Variable to store socket information */
 		string serverName;				/* Variable to store Server IP Address */
@@ -84,7 +45,9 @@ class FtpClient
 		bool connectionStatus;			/* Variable to specify the status of the socket connection */
 		
 		Msg* msgGet();
+		Payload* rawGet();
 		int msgSend(Msg *);				/* Sends the packed message to server */
+		int rawSend(Payload* data);
 	
 		bool performHandshake();		/* Initiates and completes 3-way handshake w/ the server */
 		Msg* getInitialHandshakeMessage();

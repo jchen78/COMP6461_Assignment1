@@ -26,13 +26,16 @@ void ClientListener::run() {
 
 		memcpy(&clientId, buffer, sizeof(clientId));
 
-		if (clientId == 0) {
+		if (clientId == -1) {
 			// Assign & register new client ID
+			clientLock.waitForSignalling();
 			do {
 				clientId = rand() % 256;
 			} while (clientMap.find(clientId) != clientMap.end());
 
 			clientMap.insert(std::make_pair(clientId, currentClient));
+			clientLock.finalizeSignalling();
+			clientLock.finalizeConsumption();
 
 			// Return ID back to client
 			if ((n = sendto(routerSocket, (char*)&clientId, sizeof(clientId), 0, (SOCKADDR *)&currentClient, clientAddrLen)) != sizeof(clientId)) {

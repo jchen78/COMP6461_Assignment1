@@ -17,8 +17,8 @@ using namespace std;
 FtpClient::FtpClient()
 {
 	connectionStatus = true;
-	srand(time(NULL));
-	clientIdentifier = rand();
+	clientIdentifier = -1;
+	serverIdentifier = -1;
 }
 
 /**
@@ -49,17 +49,29 @@ unsigned long FtpClient::ResolveName(string name)
  */
 int FtpClient::msgSend(Msg * msg_ptr)
 {
+	msg_ptr->clientId = clientIdentifier;
+	msg_ptr->serverId = serverIdentifier;
+	Payload* payload = new Payload();
+	payload->length = MSGHDRSIZE + msg_ptr->length;
+	memcpy(payload->data, (char*)msg_ptr, payload->length);
+	int n = rawSend(payload);
+	delete payload;
+	return (n-MSGHDRSIZE);
+}
+
+int FtpClient::rawSend(Payload* data) {
 	int n;
-	int expectedMsgLen = MSGHDRSIZE + msg_ptr->length;
+	int expectedMsgLen = data->length;
 	int addrLength = sizeof(ServAddr);
-	if ((n = sendto(clientSock, (char *)msg_ptr, expectedMsgLen, 0, (SOCKADDR *)&ServAddr, addrLength)) != expectedMsgLen) {
+	if ((n = sendto(clientSock, data->data, expectedMsgLen, 0, (SOCKADDR *)&ServAddr, addrLength)) != expectedMsgLen) {
 		std::cerr << "Send MSGHDRSIZE+length Error " << endl;
 		std::cerr << WSAGetLastError() << endl;
 		return(-1);
 	}
 
-	return (n-MSGHDRSIZE);
+	return n;
 }
+
 /**
  * Function - msgGet
  * Usage: Blocks until the next incoming packet is completely received; returns the packet formatted as a message.
@@ -68,24 +80,37 @@ int FtpClient::msgSend(Msg * msg_ptr)
  */
 Msg* FtpClient::msgGet()
 {
+	Payload* data = rawGet();
+	char* buffer = data->data;
+	
+	// must destruct after use!
+	Msg* msg = new Msg();
+	memcpy(msg, buffer, MSGHDRSIZE);
+	memcpy(msg->buffer, buffer + MSGHDRSIZE, msg->length);
+
+	delete data;
+	return msg;
+}
+
+Payload* FtpClient::rawGet()
+{
 	char buffer[RCV_BUFFER_SIZE];
 	int bufferLength;
-	int addrLength = sizeof(ServAddr);
 
 	/* Check the received Message Header */
-	if ((bufferLength = recvfrom(clientSock, buffer, RCV_BUFFER_SIZE, 0, (SOCKADDR *)&ServAddr, &addrLength)) == SOCKET_ERROR)
+	if ((bufferLength = recv(clientSock, buffer, RCV_BUFFER_SIZE, 0)) == SOCKET_ERROR)
 	{
 		cerr << "recvfrom(...) failed when getting message" << endl;
 		cerr << WSAGetLastError() << endl;
 		exit(1);
 	}
 
-	// must destruct after use!
-	Msg* msg = new Msg();
-	memcpy(msg, buffer, MSGHDRSIZE);
-	memcpy(msg->buffer, buffer + MSGHDRSIZE, msg->length);
-	return msg;
+	Payload* data = new Payload();
+	data->length = bufferLength;
+	memcpy(data->data, buffer, bufferLength);
+	return data;
 }
+
 /**
  * Function - getOperation
  * Usage: Establish connection and retrieve file from server
@@ -98,7 +123,7 @@ void FtpClient::performGet()
 	cout << "Type name of file to be retrieved: ";
 	getline(cin, fileName);
 
-	sendMsg.type = REQ_GET;
+	sendMsg.type = GET_FILE;
 	strcpy(sendMsg.buffer,fileName.c_str());
 	sendMsg.length = fileName.length();
 	numBytesSent = msgSend(&sendMsg);
@@ -138,7 +163,7 @@ void FtpClient::performList()
 	cout << endl << endl << "Listing directory contents" << endl;
 	cout << "==================================================================" << endl;
 
-	sendMsg.type = REQ_LIST;
+	sendMsg.type = GET_LIST;
 	sendMsg.length = 0;
 	msgSend(&sendMsg);
 
@@ -266,8 +291,8 @@ bool FtpClient::startClient()
 		return false;
 	}
 	
-	cout <<"ftp_tcp starting on host: "<<hostName<<endl;
-	cout <<"Type name of ftp server: "<<endl;
+	cout <<"ftp_udp starting on host: "<<hostName<<endl;
+	cout <<"Type name of ftp client muxer: "<<endl;
 	getline(cin,serverName);
 	
 	return performHandshake();
@@ -292,7 +317,7 @@ bool FtpClient::performHandshake()
     if (::bind(clientSock, (struct sockaddr *)&addr, sizeof(addr)) < 0)
 	{
 		cerr << "Socket Binding Error from FtpThread, exit" << endl;
-		exit(1);
+		return false;
 	}
 
 	memset(&ServAddr, 0, sizeof(ServAddr));
@@ -300,18 +325,33 @@ bool FtpClient::performHandshake()
 	ServAddr.sin_addr.S_un.S_addr = ResolveName(serverName);
 	ServAddr.sin_port = htons(HANDSHAKE_PORT);
 
+	// TODO
+	/* 2-way handshake w/ the muxer (reliable connection to muxer) to get client ID
+	 * 3-way handshake as usual (unreliable connection from muxer to router)
+	 */
+
+	int sizeInt = sizeof(clientIdentifier);
+	Payload* clientIdRequest = new Payload();
+	clientIdRequest->length = sizeInt;
+	memcpy(clientIdRequest->data, &clientIdentifier, sizeInt);
+	rawSend(clientIdRequest);
+	delete clientIdRequest;
+
+	Payload* clientIdResponse = rawGet();
+	memcpy(&clientIdentifier, clientIdResponse, sizeof(clientIdentifier));
+	delete clientIdResponse;
+
 	Msg* request = getInitialHandshakeMessage();
 	msgSend(request);
+	delete request;
 
-	struct sockaddr_in newServer;
 	Msg* reply = msgGet();
 	log(string("Received handshake from server. Message: ").append(reply->buffer));
-	delete request;
-
 	request = processFinalHandshakeMessage(reply);
+	delete reply;
+
 	msgSend(request);
 	delete request;
-	delete reply;
 
 	return true;
 }
@@ -329,20 +369,14 @@ Msg* FtpClient::getInitialHandshakeMessage()
 
 Msg* FtpClient::processFinalHandshakeMessage(Msg *serverHandshake)
 {
-	int startIndex = 0;
-	for (; startIndex < serverHandshake->length && serverHandshake->buffer[startIndex] != ','; startIndex++);
-	startIndex++;
+	serverIdentifier = serverHandshake->serverId;
+	sequenceNumber = serverHandshake->sequenceNumber;
 	
-	serverIdentifier = 0;
 	Msg* request = new Msg();
 	request->type = COMPLETE_HANDSHAKE;
 	request->length = BUFFER_LENGTH;
+	request->sequenceNumber = serverHandshake->sequenceNumber;
 	memset(request->buffer, 0, BUFFER_LENGTH);
-	for (int i = 0; serverHandshake->buffer[startIndex + i] != '\0'; i++) {
-		char currentDigit = serverHandshake->buffer[startIndex + i];
-		serverIdentifier = serverIdentifier * 10 + (currentDigit - '0');
-		request->buffer[i] = currentDigit;
-	}
 	
 	return request;
 }

@@ -29,7 +29,7 @@ void RouterListener::run() {
 		int n;
 		int expectedMsgLen = MSGHDRSIZE + msg.length;
 		int addrLength = sizeof(currentClient);
-		if ((n = sendto(clientSocket, (char *)&msg, expectedMsgLen, 0, (SOCKADDR *)&currentClient, addrLength)) != expectedMsgLen) {
+		if ((n = sendto(clientSocket, buffer, bufferLength, 0, (SOCKADDR *)&currentClient, addrLength)) != bufferLength) {
 			std::cerr << "RouterListener: Send MSGHDRSIZE+length Error " << endl;
 			std::cerr << WSAGetLastError() << endl;
 			exit(1);

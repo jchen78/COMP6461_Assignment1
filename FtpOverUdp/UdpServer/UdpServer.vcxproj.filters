@@ -18,15 +18,6 @@
     <ClInclude Include="FtpServer.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="ThreadA.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="ThreadB.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="InnerThread.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
     <ClInclude Include="ServerThread.h">
       <Filter>Header Files</Filter>
     </ClInclude>

@@ -66,10 +66,7 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClInclude Include="FtpServer.h" />
-    <ClInclude Include="InnerThread.h" />
     <ClInclude Include="ServerThread.h" />
-    <ClInclude Include="ThreadA.h" />
-    <ClInclude Include="ThreadB.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="FtpServer.cpp" />
