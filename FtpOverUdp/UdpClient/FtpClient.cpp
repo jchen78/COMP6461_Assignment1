@@ -6,6 +6,7 @@
 #include "FtpClient.h"
 #include <time.h>
 #include <stdlib.h>
+
 using namespace std;
 
 /**
@@ -19,6 +20,7 @@ FtpClient::FtpClient()
 	connectionStatus = true;
 	clientIdentifier = -1;
 	serverIdentifier = -1;
+	filesDirectory = string("clientFiles\\");
 }
 
 /**
@@ -72,6 +74,15 @@ int FtpClient::rawSend(Payload* data) {
 	return n;
 }
 
+int FtpClient::waitTimeOut() {
+	timeval timeout;
+	timeout.tv_usec = 2 * 1000 * TIMER_DELAY;
+	fd_set socket_set;
+	FD_ZERO(&socket_set);
+	FD_SET(clientSock, &socket_set);
+	return select(0, &socket_set, 0, 0, &timeout);
+}
+
 /**
  * Function - msgGet
  * Usage: Blocks until the next incoming packet is completely received; returns the packet formatted as a message.
@@ -119,86 +130,190 @@ Payload* FtpClient::rawGet()
  */
 void FtpClient::performGet()
 { 
-	string fileName;
+	string filename;
 	cout << "Type name of file to be retrieved: ";
-	getline(cin, fileName);
+	cin >> filename;
 
-	sendMsg.type = GET_FILE;
-	strcpy(sendMsg.buffer,fileName.c_str());
-	sendMsg.length = fileName.length();
-	numBytesSent = msgSend(&sendMsg);
-    if (numBytesSent == SOCKET_ERROR)
-	{
-		cout << "Send failed.. Check the Message length.. " << endl;     
-		return;
-	}
+	receiver->startNewPayload(sequenceNumber);
+	bool* isAcked = false;
+	char c_filename[20];
+	strcpy(c_filename, filename.c_str());
+	Common::SenderThread requestSender = Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isAcked, GET_FILE, sequenceNumber, c_filename, (int)filename.length());
 
-	cout << endl << endl << "Sent Request to " << serverName << ", Waiting... " << endl;
-	/* Send the packed message */
+	Msg* serverMsg = NULL;
+	while (!receiver->isPayloadComplete()) {
+		if (serverMsg != NULL)
+			delete serverMsg;
 
-	Msg* serverMsg = msgGet();
-	string fileInPath = string("clientFiles\\").append(fileName);
-	ofstream myFile(fileInPath, ios::out | ios::binary);
-	while (serverMsg->type != RESP_ERR) {
-		log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg->sequenceNumber)));
-		myFile.write (serverMsg->buffer, serverMsg->length);
-		setAckMessage(serverMsg);
-		delete serverMsg;
-
-		msgSend(&sendMsg);
 		serverMsg = msgGet();
+		log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg->sequenceNumber)));
+		switch (serverMsg->type) {
+		case RESP:
+			if (serverMsg->sequenceNumber == sequenceNumber)
+				*isAcked = true;
+		case RESP_ERR:
+			receiver->handleMsg(serverMsg);
+			break;
+		case TYPE_ERR:
+			receiver->terminateCurrentTransmission();
+			cout << "Transmission failed. Please retry.";
+			sequenceNumber = (serverMsg->sequenceNumber + 1) % SEQUENCE_RANGE;
+			return;
+		}
 	}
 
-	if(strcmp(serverMsg->buffer, "End of file.") == 0)
-		cout << "File received "<< endl << endl;
-	else
-		cout << serverMsg->buffer << endl << endl;
+	sequenceNumber = (serverMsg->sequenceNumber + 1) % SEQUENCE_RANGE;
 
-	myFile.close();
-	remove(fileName.c_str());
+	// TODO: Test by re-sending EOF message.
+	{
+		Msg finalAck;
+		finalAck.length = 0;
+		finalAck.type = ACK;
+
+		while (waitTimeOut() > 0) {
+			serverMsg = msgGet();
+			if (serverMsg->type == RESP_ERR && strcmp(serverMsg->buffer, "EOF") == 0) {
+				finalAck.sequenceNumber = serverMsg->sequenceNumber;
+				msgSend(&finalAck);
+			}
+		}
+	}
+
+	// Write to file
+	string fileInPath = string(filesDirectory).append(filename);
+	Payload* payload = receiver->getPayload();
+	{
+		ofstream myFile(fileInPath, ios::out | ios::binary);
+		myFile.write(payload->data, payload->length);
+	}
 }
 
 void FtpClient::performList()
 {
+	receiver->startNewPayload(sequenceNumber);
+	bool* isAcked = false;
+	char* message = NULL;
+	Common::SenderThread requestSender = Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isAcked, GET_LIST, sequenceNumber, message, 0);
+
+	Msg* serverMsg = NULL;
+	while (!receiver->isPayloadComplete()) {
+		serverMsg = msgGet();
+		log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg->sequenceNumber)));
+		switch (serverMsg->type) {
+		case RESP:
+			if (serverMsg->sequenceNumber == sequenceNumber)
+				*isAcked = true;
+		case RESP_ERR:
+			receiver->handleMsg(serverMsg);
+			break;
+		}
+	}
+
+	sequenceNumber = serverMsg->sequenceNumber + 1 % SEQUENCE_RANGE;
+	Payload* payload = receiver->getPayload();
+	char* directoryContent = payload->data;
+	int payloadLength = payload->length;
+
+	// TODO: Correct when server doesn't receive final ACK (perhaps via select fn?)
+	{
+		Msg finalAck;
+		finalAck.length = 0;
+		finalAck.type = ACK;
+
+		while (waitTimeOut() > 0) {
+			serverMsg = msgGet();
+			if (serverMsg->type == RESP_ERR && strcmp(serverMsg->buffer, "EOF") == 0) {
+				finalAck.sequenceNumber = serverMsg->sequenceNumber;
+				msgSend(&finalAck);
+			}
+		}
+	}
+
 	cout << endl << endl << "Listing directory contents" << endl;
 	cout << "==================================================================" << endl;
 
-	sendMsg.type = GET_LIST;
-	sendMsg.length = 0;
-	msgSend(&sendMsg);
-
-	Msg* serverMsg = msgGet();
-	while (serverMsg->type != RESP_ERR) {
-		log(string("Received response with sequence number ").append(to_string((_ULonglong)serverMsg->sequenceNumber)));
-		char* currentBuffer = serverMsg->buffer;
-		for (int i = 0; i < serverMsg->length; i++)
-			if (currentBuffer[i] == '\0')
-				cout << endl;
-			else
-				cout << currentBuffer[i];
-
-		setAckMessage(serverMsg);
-		delete serverMsg;
-
-		msgSend(&sendMsg);
-		serverMsg = msgGet();
+	for (int i = 0; i < payloadLength; i++) {
+		if (directoryContent[i] == 0)
+			cout << endl;
+		else
+			cout << directoryContent[i];
 	}
 
-	if(strcmp(serverMsg->buffer, "End of file.") == 0) {
-		cout << endl << endl << "End of directory listing" << endl;
-		cout << "==================================================================" << endl << endl;
+	cout << endl << endl << "End of directory listing" << endl;
+	cout << "==================================================================" << endl << endl;
+}
+
+void FtpClient::performUpload()
+{
+	string filename;
+	cout << "Please enter the file to upload: ";
+	getline(cin, filename);
+
+	string fullFileName = string(filesDirectory).append(filename);
+	WIN32_FIND_DATA data;
+	HANDLE h = FindFirstFile(fullFileName.c_str(), &data);
+	if (h == INVALID_HANDLE_VALUE)
+		throw new exception("File not found.");
+
+	FindClose(h);
+	int size = data.nFileSizeLow;
+
+	ifstream fileToRead(fullFileName, ios::binary);
+	//fileToRead.seekg(0, fileToRead.beg);
+	Payload* contents = new Payload();
+	contents->length = size;
+	contents->data = new char[size];
+	fileToRead.read(contents->data, size);
+	fileToRead.close();
+	
+	bool isAcked = false;
+	Common::SenderThread* requestMessage = new Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, &isAcked, POST, sequenceNumber, new char[1], 0);
+	requestMessage->start();
+
+	Msg* msg;
+	do {
+		msg = msgGet();
+	} while (msg->type != ACK || msg->sequenceNumber != sequenceNumber);
+	isAcked = true;
+
+	sender->initializePayload(contents->data, contents->length, sequenceNumber, msg);
+	delete contents;
+
+	msg->clientId = clientIdentifier;
+	msg->serverId = serverIdentifier;
+	msg->length = 0;
+	msg->sequenceNumber = sender->finalSequenceNumber();
+	msg->type = ACK;
+	while (!sender->isPayloadSent()) {
+		msg = msgGet();
+		if (msg->type == ACK)
+			sender->processAck();
+		else if (msg->type == TYPE_ERR && strcmp(msg->buffer, "WFR") == 0)
+			sender->processAck();
 	}
 }
 
 void FtpClient::terminate()
 {
-	sendMsg.type = TERMINATE;
-	sendMsg.length = 0;
-	msgSend(&sendMsg);
+	bool isAcked = false;
+	Msg* msg;
+	Common::SenderThread terminationStart = Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, &isAcked, TERMINATE, sequenceNumber, NULL, 0);
+	terminationStart.start();
+
+	do {
+		msg = msgGet();
+	} while (msg->sequenceNumber != sequenceNumber || msg->type != ACK);
+	isAcked = true;
+
+	delete msg;
+	msg = new Msg();
+	msg->sequenceNumber = sequenceNumber;
+	msg->length = 0;
+	msg->type = ACK;
+	msgSend(msg); // Unreliability OK: server will exit on timeout
 
 	// Set artificially high wait time to make sure the message is completely flushed prior to exiting.
 	Sleep(250);
-
 	exit(0);
 }
 
@@ -233,6 +348,8 @@ void FtpClient::showMenu()
 	int optionVal;
 	cout << "1 : GET " << endl;
 	cout << "2 : LIST " << endl;
+	cout << "3 : UPLOAD " << endl;
+	cout << "4 : RENAME " << endl;
 	cout << "3 : EXIT " << endl;
 	cout << "Please select the operation that you want to perform : ";
 	
@@ -257,6 +374,10 @@ void FtpClient::showMenu()
 			break;
 
 		case 3:
+			performUpload();
+			break;
+
+		case 5:
 			cout << "Terminating... " << endl; 
 			terminate();
 			break;
@@ -295,7 +416,13 @@ bool FtpClient::startClient()
 	cout <<"Type name of ftp client muxer: "<<endl;
 	getline(cin,serverName);
 	
-	return performHandshake();
+	if (!performHandshake())
+		return false;
+
+	receiver = new Common::Receiver(clientSock, serverIdentifier, clientIdentifier, ServAddr);
+	sender = new Common::Sender(clientSock, serverIdentifier, clientIdentifier, ServAddr);
+
+	return true;
 }
 
 bool FtpClient::performHandshake()

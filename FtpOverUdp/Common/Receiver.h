@@ -35,6 +35,7 @@ namespace Common
 		void startNewPayload(int sequenceSeed);
 		void handleMsg(Msg*);
 		bool isPayloadComplete();
+		void terminateCurrentTransmission();
 		Payload* getPayload();
 		~Receiver();
 	};

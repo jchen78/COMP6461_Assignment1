@@ -54,6 +54,12 @@ private:
 	void getFile();
 	void dispatchToReceiver();
 	void saveFile(Payload* fileContents);
+
+	void notifyWrongState();
+	void resetToReadyState();
+	void terminate();
+
+	void sendMsg(Msg*);
 public:
 	/* NOTE: ServerThread will need to share an I/O mutex */
 	ServerThread(int serverId, int serverSocket, struct sockaddr_in clientAddress, Msg* initialHandshake, AsyncLock* ioLock);

@@ -22,6 +22,7 @@ typedef enum
 	POST = 16,
 	RESP = 10,
 	RESP_ERR = 12,
+	TYPE_ERR = 13,
 	ACK = 14,
 	TERMINATE = 20
 } Type;

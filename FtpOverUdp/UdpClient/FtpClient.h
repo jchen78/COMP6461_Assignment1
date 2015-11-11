@@ -12,6 +12,8 @@
 #include <climits>
 #include <windows.h>
 #include <Common.h>
+#include <Receiver.h>
+#include <Sender.h>
 
 using namespace std;
 
@@ -43,7 +45,11 @@ class FtpClient
 		int numBytesRecv;				/* Variable to store the bytes of data received from the server */
 		int bufferSize;					/* Variable to specify the buffer size */
 		bool connectionStatus;			/* Variable to specify the status of the socket connection */
+		string filesDirectory;
+		Common::Receiver* receiver;
+		Common::Sender* sender;
 		
+		int waitTimeOut();
 		Msg* msgGet();
 		Payload* rawGet();
 		int msgSend(Msg *);				/* Sends the packed message to server */
@@ -57,6 +63,8 @@ class FtpClient
 
 		void performGet();				/* Retrieves the file from Server */
 		void performList();
+		void performUpload();
+		void performRename();
 		void terminate();
 
 		void log(const string &logItem);

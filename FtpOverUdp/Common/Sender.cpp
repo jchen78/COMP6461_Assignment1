@@ -98,6 +98,16 @@ namespace Common
 		return isComplete;
 	}
 
+	void Sender::terminateCurrentTransmission() {
+		for (int i = 0, currentIndex = currentWindowOrigin; i < WINDOW_SIZE; i++, currentIndex = (currentIndex + 1) % SEQUENCE_RANGE) {
+			if (currentWindow[currentIndex] != NULL) {
+				*windowState[currentIndex] = false;
+				windowState[currentIndex] = NULL;
+				currentWindow[currentIndex] = NULL;
+			}
+		}
+	}
+
 	SenderThread::SenderThread(int sendingSocket, int serverId, int clientId, struct sockaddr_in* destinationAddress, bool* isAcked, Type messageType, int sequenceNumber, char *packetContents, int packetLength)
 	{
 		socket = sendingSocket;
@@ -110,7 +120,8 @@ namespace Common
 		msg->length = packetLength;
 		msg->sequenceNumber = sequenceNumber;
 
-		memcpy(msg->buffer, packetContents, packetLength);
+		if (packetLength > 0)
+			memcpy(msg->buffer, packetContents, packetLength);
 	}
 
 	void SenderThread::run()

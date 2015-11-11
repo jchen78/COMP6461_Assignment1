@@ -96,6 +96,10 @@ namespace Common
 		return isComplete;
 	}
 
+	void Receiver::terminateCurrentTransmission() {
+		// Note: Nothing to do. Cost of freeing up resources deferred to either destructor or next transmission.
+	}
+
 	Payload* Receiver::getPayload() {
 		if (!isComplete)
 			throw new std::exception("Payload not yet complete");

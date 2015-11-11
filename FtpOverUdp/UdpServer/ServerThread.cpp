@@ -38,7 +38,7 @@ void ServerThread::run()
 		case HANDSHAKING:
 			if (currentMsg->type == COMPLETE_HANDSHAKE)
 				endHandshake();
-			// TODO: Send RESP_ERR
+			resetToReadyState();
 			break;
 		case WAITING_FOR_REQUEST:
 			switch (currentMsg->type) {
@@ -55,49 +55,54 @@ void ServerThread::run()
 				// TODO: Complete action
 				break;
 			case TERMINATE:
-				// TODO: Send ACK
-				currentState = EXITING;
-				break;
+				if (currentMsg->length == 0)
+					terminate();
 			default:
-				// TODO: Send RESP_ERR
+				notifyWrongState();
 				break;
 			}
 			break;
 		case SENDING:
-			if (currentMsg->type == ACK) {
+			if (currentMsg->type == ACK)
 				dispatchToSender();
-			}
-			else {
-				// TODO: Send RESP_ERR
-			}
+			else if (currentMsg->type == TERMINATE) {
+				if (currentMsg->length == 0)
+					terminate();
+				else
+					resetToReadyState();
+			} else
+				notifyWrongState();
+
 			break;
 		case RECEIVING:
-			if (currentMsg->type == RESP || currentMsg->type == RESP_ERR && strcmp(currentMsg->buffer, "EOF") == 0) {
+			if (currentMsg->type == RESP || currentMsg->type == RESP_ERR && strcmp(currentMsg->buffer, "EOF") == 0)
 				dispatchToReceiver();
-			}
-			else {
-				// TODO: Send RESP_ERR
-			}
+			else if (currentMsg->type == TERMINATE) {
+				if (currentMsg->length == 0)
+					terminate();
+				else
+					resetToReadyState();
+			} else
+				notifyWrongState();
+
 			break;
 		case RENAMING:
 			if (currentMsg->type == RESP) {
 				// TODO: Complete action
-			}
-			else if (currentMsg->type == TERMINATE && strcmp(currentMsg->buffer, filename.c_str()) == 0) {
-				// TODO: Complete action
-			}
-			else {
-				// TODO: Send RESP_ERR
-			}
+			} else if (currentMsg->type == TERMINATE) {
+				if (currentMsg->length == 0)
+					terminate();
+				else
+					resetToReadyState();
+			} else
+				notifyWrongState();
 			break;
 		case EXITING:
-			if (currentMsg->type == ACK) {
-				// TODO: Complete action (incl. set state to terminated)
+			if (currentMsg->type == ACK)
 				currentState = TERMINATED;
-			}
-			else {
-				// TODO: Send RESP_ERR
-			}
+			else
+				notifyWrongState();
+
 			break;
 		}
 
@@ -188,13 +193,16 @@ Payload* ServerThread::getFileContents(const char* fileName)
 {
 	ioLock->waitForSignalling();
 
-	ifstream fileToRead(string(filesDirectory).append(fileName), ios::binary);
-	if (!fileToRead)
-		throw new exception("File not found");
+	string fullFileName = string(filesDirectory).append(fileName);
+	WIN32_FIND_DATA data;
+	HANDLE h = FindFirstFile(fullFileName.c_str(), &data);
+	if (h == INVALID_HANDLE_VALUE)
+		throw new exception("File not found.");
 
-	int size = 256 * 5;
-	fileToRead.seekg(0, fileToRead.beg);
+	FindClose(h);
+	int size = data.nFileSizeLow;
 
+	ifstream fileToRead(fullFileName, ios::binary);
 	Payload* contents = new Payload();
 	contents->length = size;
 	contents->data = new char[size];
@@ -227,6 +235,14 @@ void ServerThread::dispatchToReceiver() {
 	}
 }
 
+void ServerThread::dispatchToSender()
+{
+	std::cout << "ServerThread: ACK #" << std::to_string(currentMsg->sequenceNumber) << endl;
+	sender->processAck();
+	if (sender->isPayloadSent())
+		currentState = WAITING_FOR_REQUEST;
+}
+
 void ServerThread::saveFile(Payload* fileContents) {
 	ioLock->waitForSignalling();
 
@@ -251,10 +267,65 @@ void ServerThread::saveFile(Payload* fileContents) {
 	ioLock->finalizeConsumption();
 }
 
-void ServerThread::dispatchToSender()
-{
-	std::cout << "ServerThread: ACK #" << std::to_string(currentMsg->sequenceNumber) << endl;
-	sender->processAck();
-	if (sender->isPayloadSent())
-		currentState = WAITING_FOR_REQUEST;
+void ServerThread::notifyWrongState() {
+	Msg errorNotification;
+	errorNotification.type = TYPE_ERR;
+	errorNotification.sequenceNumber = currentMsg->sequenceNumber;
+	errorNotification.length = 4;
+	switch (currentState) {
+	case HANDSHAKING:
+		memcpy(errorNotification.buffer, "HSK", 4);
+		break;
+	case WAITING_FOR_REQUEST:
+		memcpy(errorNotification.buffer, "WFR", 4);
+		break;
+	case SENDING:
+		memcpy(errorNotification.buffer, "SND", 4);
+		break;
+	case RECEIVING:
+		memcpy(errorNotification.buffer, "RCV", 4);
+		break;
+	case RENAMING:
+		memcpy(errorNotification.buffer, "RNM", 4);
+		break;
+	case EXITING:
+		memcpy(errorNotification.buffer, "EXT", 4);
+		break;
+	}
+
+	sendMsg(&errorNotification);
+}
+
+void ServerThread::resetToReadyState() {
+	switch (currentState) {
+	case SENDING:
+		sender->terminateCurrentTransmission();
+		break;
+	case RECEIVING:
+		receiver->terminateCurrentTransmission();
+		break;
+	case RENAMING:
+		*isResponseComplete = true;
+		break;
+	}
+
+	currentState = WAITING_FOR_REQUEST;
+}
+
+void ServerThread::terminate() {
+	resetToReadyState();
+	currentState = EXITING;
+}
+
+void ServerThread::sendMsg(Msg* msg) {
+	msg->clientId = currentMsg->clientId;
+	msg->serverId = serverId;
+
+	int n;
+	int expectedMsgLen = MSGHDRSIZE + msg->length;
+	int addrLength = sizeof(address);
+	if ((n = sendto(socket, (char *)msg, expectedMsgLen, 0, (SOCKADDR *)&address, addrLength)) != expectedMsgLen) {
+		std::cerr << "Send MSGHDRSIZE+length Error " << endl;
+		std::cerr << WSAGetLastError() << endl;
+	}
 }

@@ -5,8 +5,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #include "FtpServer.h"
 #include <string>
-#include "ThreadA.h"
-#include "ThreadB.h"
 
 using namespace std;
 

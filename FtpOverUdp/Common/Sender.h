@@ -32,6 +32,8 @@ namespace Common
 		void send();
 		void processAck();
 		bool isPayloadSent();
+		void terminateCurrentTransmission();
+		int finalSequenceNumber() { return (sequenceSeed + numberOfPackets + 1) % SEQUENCE_RANGE; }
 		~Sender() {
 			delete[] completePayload;
 		}
