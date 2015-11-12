@@ -8,10 +8,10 @@
 #include <stdlib.h>
 using namespace std;
 
-/* Can not introduce once introduced cout error exception "cout is ambiguous"
+/* Can not introduce once introduced cout error exception "cout is ambiguous"*/
 int TIMEOUT_USEC = 300;
 struct timeval timeout = { 0, 300 };
-*/
+
 
 
 /**
@@ -115,7 +115,15 @@ void FtpClient::performGet()
 	}
 
 	cout << endl << endl << "Sent Request to " << serverName << ", Waiting... " << endl;
-	/* Send the packed message */
+
+	int addrLength = sizeof(ServAddr);
+	/* Send the message for windowsize */
+	printf("\nSending request for window size.\n");
+	sendto(clientSock, send_mes, strlen(send_mes), 0, (SOCKADDR *)& ServAddr, addrLength);
+
+	/*obtaining windowsize.*/
+	printf("\nWaiting for the windowsize.\n");
+	recvfrom(clientSock, buffer, sizeof(buffer), 0, (SOCKADDR *)&ServAddr, &addrLength);
 
 	Msg* serverMsg = msgGet();
 	string fileInPath = string("clientFiles\\").append(fileName);
@@ -130,7 +138,7 @@ void FtpClient::performGet()
 			send_data(send_mes, flag, last_num);
 			memset(buffer, 0, 512);
 		} while (flag != 6);
-		/*log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg->sequenceNumber))); put the log into checkWindow()*/
+		log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg->sequenceNumber))); //put the log into checkWindow()
 		myFile.write(serverMsg->buffer, serverMsg->length);
 		setAckMessage(serverMsg);
 		delete serverMsg;
@@ -151,7 +159,9 @@ void FtpClient::performGet()
 
 }
 
-
+/*
+Receicing data,checking whether it should be put into buffer of file
+*/
 int FtpClient::checkWindow(int& last_num, sockaddr_in ServAddr, int t)
 {
 	char buffer[RCV_BUFFER_SIZE];
@@ -200,6 +210,9 @@ int FtpClient::checkWindow(int& last_num, sockaddr_in ServAddr, int t)
 	}
 }
 
+/*
+Sending data
+*/
 int FtpClient::send_data(char send_mes[3], int flag, int last_num)
 {
 	int addrLength = sizeof(ServAddr);
@@ -262,6 +275,8 @@ void FtpClient::performList()
 	}
 }
 
+
+
 void FtpClient::terminate()
 {
 	sendMsg.type = TERMINATE;
@@ -300,7 +315,8 @@ void FtpClient::showMenu()
 	int optionVal;
 	cout << "1 : GET " << endl;
 	cout << "2 : LIST " << endl;
-	cout << "3 : EXIT " << endl;
+	cout << "3 : PUT " << endl;
+	cout << "4 : EXIT " << endl;
 	cout << "Please select the operation that you want to perform : ";
 
 	/* Check if invalid value is provided and reset if cin error flag is set */
@@ -324,6 +340,10 @@ void FtpClient::showMenu()
 		break;
 
 	case 3:
+		performList();
+		break;
+
+	case 4:
 		cout << "Terminating... " << endl;
 		terminate();
 		break;
@@ -427,7 +447,7 @@ Msg* FtpClient::processFinalHandshakeMessage(Msg *serverHandshake)
 
 	serverIdentifier = 0;
 	Msg* request = new Msg();
-	request->type = COMPLETE_HANDSHAKE;
+	request->type = REQ_LIST;  //change server side to handle the third hand shake,performing list
 	request->length = BUFFER_LENGTH;
 	memset(request->buffer, 0, BUFFER_LENGTH);
 	for (int i = 0; serverHandshake->buffer[startIndex + i] != '\0'; i++) {
@@ -440,6 +460,119 @@ Msg* FtpClient::processFinalHandshakeMessage(Msg *serverHandshake)
 }
 
 
+
+/**
+* Function - send message and check timer
+* Usage: Send the message to server,buffer ACKed packet,checking the timer of un ACKed packets
+*
+* @arg: void
+*/
+void FtpClient::performPut(){
+
+}
+
+
+
+/** PUT
+* Send data
+* Usage: Perform sent data window in selective repeat protocol 
+*
+* @arg: int
+*/
+int FtpClient::send_windows(char send_buf[WINDOW_SIZE][256], int windowsize, int  totalpackets, int  totalframes)
+{
+	char req[50];
+	int  framessend = 0, i = 0, j = 0, k, l, m, n, repacket[40];
+	ack acknowledgement;
+	frame f1;
+	int j = 0;
+	int l = 0;                                                    
+	while (l<totalpackets)
+	{
+		//initialising the transmit buffer.
+		memset((char*)&f1, 0, sizeof(f1));
+		printf("\nInitialising the transmit buffer.\n");
+		printf("\nThe frame to be send is %d with packets : \t", framessend);
+		//Builting the frame.
+		for (m = 0; m<j; m++)
+		{
+			//including the packets for which negative acknowledgement was received.
+			printf("%d  ", repacket[m]);
+			f1.packet[m] = repacket[m];
+		}
+
+		while (j<windowsize && i<totalpackets)
+		{
+			printf("%d  ", i);
+			f1.packet[j] = i;
+			i++;
+			j++;
+		}
+		printf("\nSending frame %d\n", framessend);
+
+		int addrLength = sizeof(ServAddr);
+		//sending the frame.
+		sendto(clientSock, (char*)&f1, sizeof(f1), 0, (sockaddr*)&ServAddr, addrLength);
+		//Waiting for the acknowledgement.
+		printf("\nWaiting for the acknowledgement.\n");
+		recvfrom(clientSock, (char*)&acknowledgement, sizeof(acknowledgement), 0, (sockaddr*)&ServAddr, &addrLength);
+		printf("33[H33[J");
+
+		//Checking acknowledgement of each packet.
+		j = 0;
+		k = 0;
+		m = 0;
+		n = l;
+		while (m<windowsize && n<totalpackets)
+		{
+			if (acknowledgement.acknowledge[m] == -1)
+			{
+				printf("\nNegative acknowledgement received for packet: %d\n", f1.packet[m]);
+				k = 1;
+				repacket[j] = f1.packet[m];
+				j++;
+			}
+			else
+			{
+				l++;
+			}
+			m++;
+			n++;
+		}
+
+		if (k == 0)
+		{
+			printf("\nPositive acknowledgement received for all packets within the frame : %d\n", framessend);
+		}
+
+		framessend++;
+		printf("\nPRESS ENTER TO PROCEED……\n");
+		fgets(req, 2, stdin);
+		printf("33[H33[J");
+	}
+
+	printf("\nAll frames send successfully.\n\nClosing connection with the client.\n");
+	closesocket(clientSock);
+}
+
+
+
+/** PUT
+* Selective repeat
+* Usage: Selective repeat protocol
+*
+* @arg: int
+
+int FtpClient::selective_repeat(char send_buf[WINDOW_SIZE][256], int cur_sent)
+{
+	int num = (cur_sent - 1) % WINDOW_SIZE;
+	cout << "Resending Frame" << cur_sent << ":" << &send_buf[num][2] << "..." << endl;
+	while (sendto(s, send_buf[num], strlen(send_buf[num]), 0, (SOCKADDR *)&clientSock, sizeof(sockaddr)) == SOCKET_ERROR)
+		cout << "Error,fail to sent(sendto():" << WSAGetLastError() << ")" << endl;
+	return 1;
+}
+
+*/
 
 /** PUT
 * Normalize
@@ -457,43 +590,6 @@ void normalize(char send_buf[WINDOW_SIZE][256], int sent_num)
 	send_buf[i][1] = sent_num;
 	while (currentBuffer[position] && (send_buf[i][num++] = currentBuffer[position++]) != ' ');
 	send_buf[i][num] = '\0';
-}
-*/
-
-/** PUT
-* Send data
-* Usage: Perform sent data in selective repeat protocol 
-*
-* @arg: int
-
-int FtpClient::send_data(char send_buf[WINDOW_SIZE][256], int max_recv, int &max_sent, int max_num)
-{
-	while (max_sent<(max_recv + WINDOW_SIZE) && max_sent<max_num){
-		++max_sent;
-		normalize(send_buf, max_sent);
-		cout << "Sending Frame" << max_sent << ":" << &send_buf[(max_sent - 1) % WINDOW_SIZE][2] << "..." << endl;
-		if (sendto(s, send_buf[(max_sent - 1) % WINDOW_SIZE], strlen(send_buf[(max_sent - 1) % WINDOW_SIZE]), 0, (SOCKADDR *)&ser, sizeof(sockaddr)) == SOCKET_ERROR)
-			cout << "Error,fail to sent(sendto():" << WSAGetLastError() << ")" << endl;
-		Sleep(500);
-	}
-	return 1;
-}
-*/
-
-
-/** PUT
-* Selective repeat
-* Usage: Selective repeat protocol
-*
-* @arg: int
-
-int FtpClient::selective_repeat(char send_buf[WINDOW_SIZE][256], int cur_sent)
-{
-	int num = (cur_sent - 1) % WINDOW_SIZE;
-	cout << "Resending Frame" << cur_sent << ":" << &send_buf[num][2] << "..." << endl;
-	while (sendto(s, send_buf[num], strlen(send_buf[num]), 0, (SOCKADDR *)&clientSock, sizeof(sockaddr)) == SOCKET_ERROR)
-		cout << "Error,fail to sent(sendto():" << WSAGetLastError() << ")" << endl;
-	return 1;
 }
 */
 
