@@ -13,6 +13,7 @@ typedef enum {
 	STARTING_HANDSHAKE,
 	HANDSHAKING,
 	WAITING_FOR_REQUEST,
+	WAITING_FOR_ACK,
 	SENDING,
 	RECEIVING,
 	RENAMING,
@@ -40,7 +41,8 @@ private:
 	class Receiver* receiver;
 	std::string filename;
 	SenderThread* currentResponse;
-	bool* isResponseComplete;
+	bool isResponseComplete;
+	int sequenceNumber;
 
 	// Private methods to handle requests
 	void startHandshake();

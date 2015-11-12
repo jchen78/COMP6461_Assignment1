@@ -38,7 +38,10 @@ void ServerThread::run()
 		case HANDSHAKING:
 			if (currentMsg->type == COMPLETE_HANDSHAKE)
 				endHandshake();
-			resetToReadyState();
+			else if (currentMsg->type == HANDSHAKE)
+				notifyWrongState();
+			else
+				resetToReadyState();
 			break;
 		case WAITING_FOR_REQUEST:
 			switch (currentMsg->type) {
@@ -61,6 +64,13 @@ void ServerThread::run()
 				notifyWrongState();
 				break;
 			}
+			break;
+		case WAITING_FOR_ACK:
+			if (currentMsg->type == ACK && currentMsg->sequenceNumber == sequenceNumber)
+				currentState = WAITING_FOR_REQUEST;
+			else
+				notifyWrongState();
+
 			break;
 		case SENDING:
 			if (currentMsg->type == ACK)
@@ -117,17 +127,17 @@ void ServerThread::run()
 void ServerThread::startHandshake()
 {
 	currentState = HANDSHAKING;
-	isResponseComplete = new bool(false);
+	isResponseComplete = false;
 	sender = new Sender(socket, serverId, currentMsg->clientId, address);
 	receiver = new Receiver(socket, serverId, currentMsg->clientId, address);
-	currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, isResponseComplete, HANDSHAKE, serverId % SEQUENCE_RANGE, "", 0);
+	currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, &isResponseComplete, HANDSHAKE, serverId % SEQUENCE_RANGE, "", 0);
 	currentResponse->start();
 }
 
 void ServerThread::endHandshake()
 {
 	currentState = WAITING_FOR_REQUEST;
-	(*isResponseComplete) = true; // Will stop sending HANDSHAKE after timeout (SenderThread will auto-destroy)
+	isResponseComplete = true; // Will stop sending HANDSHAKE after timeout (SenderThread will auto-destroy)
 	currentResponse = NULL;
 }
 
@@ -184,8 +194,11 @@ void ServerThread::sendFile()
 	currentState = SENDING;
 	try { startSender(getFileContents(currentMsg->buffer)); }
 	catch (exception e) {
-		currentState = WAITING_FOR_REQUEST;
-		// TODO: Send RESP_ERR
+		currentState = WAITING_FOR_ACK;
+		sequenceNumber = currentMsg->sequenceNumber + 1;
+		isResponseComplete = false;
+		currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, &isResponseComplete, RESP_ERR, sequenceNumber, "NSF", 4);
+		currentResponse->start();
 	}
 }
 
@@ -279,6 +292,9 @@ void ServerThread::notifyWrongState() {
 	case WAITING_FOR_REQUEST:
 		memcpy(errorNotification.buffer, "WFR", 4);
 		break;
+	case WAITING_FOR_ACK:
+		memcpy(errorNotification.buffer, "WFA", 4);
+		break;
 	case SENDING:
 		memcpy(errorNotification.buffer, "SND", 4);
 		break;
@@ -304,8 +320,9 @@ void ServerThread::resetToReadyState() {
 	case RECEIVING:
 		receiver->terminateCurrentTransmission();
 		break;
+	case HANDSHAKING:
 	case RENAMING:
-		*isResponseComplete = true;
+		isResponseComplete = true;
 		break;
 	}
 

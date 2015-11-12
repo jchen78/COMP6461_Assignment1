@@ -61,6 +61,8 @@ class FtpClient
 
 		void setAckMessage(Msg*);
 
+		void sendRstMessage();
+
 		void performGet();				/* Retrieves the file from Server */
 		void performList();
 		void performUpload();

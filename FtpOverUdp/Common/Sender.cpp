@@ -67,7 +67,8 @@ namespace Common
 	void Sender::processAck()
 	{
 		int index = currentAck->sequenceNumber;
-		*windowState[index] = true;
+		if (windowState[index] != NULL)
+			*windowState[index] = true;
 		currentWindow[index] = NULL;
 
 		if (currentWindowOrigin == numberOfPackets) {

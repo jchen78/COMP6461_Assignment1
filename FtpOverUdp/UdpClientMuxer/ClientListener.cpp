@@ -11,15 +11,15 @@ void ClientListener::run() {
 
 	sockaddr_in currentClient;
 	int clientId;
-	int clientAddrLen;
+	int clientAddrLen = sizeof(currentClient);
 	int n;
 
 	int routerAddrLen = sizeof(routerAddress);
 
 	while (true) {
-		if ((bufferLength = recvfrom(routerSocket, buffer, RCV_BUFFER_SIZE, 0, (SOCKADDR*)&currentClient, &clientAddrLen)) == SOCKET_ERROR)
+		if ((bufferLength = recvfrom(clientSocket, buffer, RCV_BUFFER_SIZE, 0, (SOCKADDR*)&currentClient, &clientAddrLen)) == SOCKET_ERROR)
 		{
-			cerr << "recvfrom(...) failed when getting message" << endl;
+			cerr << endl << "ClientListener: recvfrom(...) failed when getting message" << endl;
 			cerr << WSAGetLastError() << endl;
 			exit(1);
 		}
@@ -38,7 +38,7 @@ void ClientListener::run() {
 			clientLock.finalizeConsumption();
 
 			// Return ID back to client
-			if ((n = sendto(routerSocket, (char*)&clientId, sizeof(clientId), 0, (SOCKADDR *)&currentClient, clientAddrLen)) != sizeof(clientId)) {
+			if ((n = sendto(clientSocket, (char*)&clientId, sizeof(clientId), 0, (SOCKADDR *)&currentClient, clientAddrLen)) != sizeof(clientId)) {
 				std::cerr << "ClientListener: Send error " << endl;
 				std::cerr << WSAGetLastError() << endl;
 				exit(1);

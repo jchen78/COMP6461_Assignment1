@@ -16,7 +16,7 @@ void RouterListener::run() {
 	while (true) {
 		if ((bufferLength = recv(routerSocket, buffer, RCV_BUFFER_SIZE, 0)) == SOCKET_ERROR) 
 		{
-			cerr << "recvfrom(...) failed when getting message" << endl;
+			cerr << "RouterListener: recvfrom(...) failed when getting message" << endl;
 			cerr << WSAGetLastError() << endl;
 			exit(1);
 		}

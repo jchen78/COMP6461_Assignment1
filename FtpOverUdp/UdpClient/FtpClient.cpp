@@ -122,6 +122,14 @@ Payload* FtpClient::rawGet()
 	return data;
 }
 
+void FtpClient::sendRstMessage() {
+	Msg msg;
+	msg.type = TERMINATE;
+	msg.length = 4;
+	strcpy(msg.buffer, "RST");
+	msgSend(&msg);
+}
+
 /**
  * Function - getOperation
  * Usage: Establish connection and retrieve file from server
@@ -156,7 +164,8 @@ void FtpClient::performGet()
 			break;
 		case TYPE_ERR:
 			receiver->terminateCurrentTransmission();
-			cout << "Transmission failed. Please retry.";
+			sendRstMessage();
+			cout << "Transmission failed (server was not ready). Please retry." << endl;
 			sequenceNumber = (serverMsg->sequenceNumber + 1) % SEQUENCE_RANGE;
 			return;
 		}
@@ -206,6 +215,12 @@ void FtpClient::performList()
 		case RESP_ERR:
 			receiver->handleMsg(serverMsg);
 			break;
+		case TYPE_ERR:
+			receiver->terminateCurrentTransmission();
+			sendRstMessage();
+			cout << "Transmission failed (server was not ready). Please retry." << endl;
+			sequenceNumber = (serverMsg->sequenceNumber + 1) % SEQUENCE_RANGE;
+			return;
 		}
 	}
 
@@ -279,17 +294,17 @@ void FtpClient::performUpload()
 	sender->initializePayload(contents->data, contents->length, sequenceNumber, msg);
 	delete contents;
 
-	msg->clientId = clientIdentifier;
-	msg->serverId = serverIdentifier;
-	msg->length = 0;
-	msg->sequenceNumber = sender->finalSequenceNumber();
-	msg->type = ACK;
 	while (!sender->isPayloadSent()) {
 		msg = msgGet();
 		if (msg->type == ACK)
 			sender->processAck();
-		else if (msg->type == TYPE_ERR && strcmp(msg->buffer, "WFR") == 0)
-			sender->processAck();
+		else if (msg->type == TYPE_ERR) {
+			sender->terminateCurrentTransmission();
+			if (msg->sequenceNumber != sender->finalSequenceNumber() || strcmp(msg->buffer, "WFR") != 0) {
+				sendRstMessage();
+				cout << "Transmission failed (server was not ready). Please retry." << endl;
+			}
+		}
 	}
 }
 
@@ -533,9 +548,7 @@ int main(int argc, char *argv[])
 		return 1;
 
 	while (true)
-	{
 		tc->showMenu();
-	}
 		
 	return 0;
 }

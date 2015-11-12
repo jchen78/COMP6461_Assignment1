@@ -51,6 +51,8 @@ int createSocket(int listeningPort)
 		cerr << "Socket Binding Error from FtpThread, exit" << endl;
 		exit(1);
 	}
+
+	return newSocket;
 }
 
 int _tmain(int argc, _TCHAR* argv[])
@@ -75,7 +77,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		exit(1);
 	}
 
-	cout << "Client muxer starting on host " << muxerName;
+	cout << "Client muxer starting on host " << muxerName << endl;
 
 	int clientSocket = createSocket(CLIENT_PORT); // Socket for packets coming from clients to the muxer.
 	int fromRouterSocket = createSocket(FROM_ROUTER_PORT); // Socket for packets coming from router to muxer.
@@ -84,6 +86,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	memset(&routerAddr, 0, sizeof(routerAddr));
 	routerAddr.sin_family = AF_INET;
 	routerAddr.sin_addr.S_un.S_addr = ResolveName(hostname);
+	routerAddr.sin_port = htons(TO_ROUTER_PORT);
 
 	ClientListener cl = ClientListener(clientSocket, fromRouterSocket, routerAddr);
 	RouterListener rl = RouterListener(fromRouterSocket, clientSocket, cl.getMap());

@@ -18,6 +18,8 @@ Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "UdpServer", "UdpServer\UdpS
 EndProject
 Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "UdpClientMuxer", "UdpClientMuxer\UdpClientMuxer.vcxproj", "{DA5283FC-B559-4FAB-8477-C095D10A2B70}"
 EndProject
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "Router", "Router\Router.vcxproj", "{8FBEC10B-3F25-467B-8468-7EFA1BA17BF6}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|ARM = Debug|ARM
@@ -69,6 +71,14 @@ Global
 		{DA5283FC-B559-4FAB-8477-C095D10A2B70}.Release|Win32.ActiveCfg = Release|Win32
 		{DA5283FC-B559-4FAB-8477-C095D10A2B70}.Release|Win32.Build.0 = Release|Win32
 		{DA5283FC-B559-4FAB-8477-C095D10A2B70}.Release|x64.ActiveCfg = Release|Win32
+		{8FBEC10B-3F25-467B-8468-7EFA1BA17BF6}.Debug|ARM.ActiveCfg = Debug|Win32
+		{8FBEC10B-3F25-467B-8468-7EFA1BA17BF6}.Debug|Win32.ActiveCfg = Debug|Win32
+		{8FBEC10B-3F25-467B-8468-7EFA1BA17BF6}.Debug|Win32.Build.0 = Debug|Win32
+		{8FBEC10B-3F25-467B-8468-7EFA1BA17BF6}.Debug|x64.ActiveCfg = Debug|Win32
+		{8FBEC10B-3F25-467B-8468-7EFA1BA17BF6}.Release|ARM.ActiveCfg = Release|Win32
+		{8FBEC10B-3F25-467B-8468-7EFA1BA17BF6}.Release|Win32.ActiveCfg = Release|Win32
+		{8FBEC10B-3F25-467B-8468-7EFA1BA17BF6}.Release|Win32.Build.0 = Release|Win32
+		{8FBEC10B-3F25-467B-8468-7EFA1BA17BF6}.Release|x64.ActiveCfg = Release|Win32
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
