@@ -90,7 +90,16 @@ private:
 	char networklayer_buff[10][256];
 	char send_mes[3];
 	char buffer[BUFFER_LENGTH];
-	
+	int total;
+	struct ack
+	{
+		int acknowledge[40];
+	};
+	struct frame
+	{
+		int packet[40];
+	};
+
 
 	Msg* msgGet();
 	int msgSend(Msg *);				/* Sends the packed message to server */
@@ -101,12 +110,14 @@ private:
 	int selective_repeat(char send_buf[WINDOW_SIZE][256], int cur_sent);
 	int FtpClient::checkWindow(int& last_num, sockaddr_in sa_last, int t);
 	int FtpClient::send_data(char send_mes[3], int flag, int last_num);
+	int send_windows(char send_buf[WINDOW_SIZE][256], int windowsize, int  totalpackets, int  totalframes);
 
 	void setAckMessage(Msg*);
 
 	void performGet();				/* Retrieves the file from Server */
 	void performList();
 	void terminate();
+	void performPut();
 
 	void log(const string &logItem);
 
