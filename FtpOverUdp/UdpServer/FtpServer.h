@@ -8,7 +8,7 @@
 #define HOSTNAME_LENGTH 20
 #define RESP_LENGTH 40
 #define FILENAME_LENGTH 20
-#define REQUEST_PORT 5001
+#define REQUEST_PORT 5000
 #define RCV_BUFFER_SIZE 512
 #define MAXPENDING 10
 #define TRACE 1
@@ -52,6 +52,7 @@ class FtpServer
 		char serverName[HOSTNAME_LENGTH];		/* Server Name */
 		char filesDirectory[13];
 		class AsyncLock ioLock;
+		class std::map<int, int> clientIds;
 		class std::map<int, Msg> messages;
 		class std::map<int, AsyncLock*> threadLocks;
 

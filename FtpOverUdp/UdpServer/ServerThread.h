@@ -41,7 +41,7 @@ private:
 	class Receiver* receiver;
 	std::string filename;
 	SenderThread* currentResponse;
-	bool isResponseComplete;
+	bool* isResponseComplete;
 	int sequenceNumber;
 
 	// Private methods to handle requests
@@ -62,6 +62,7 @@ private:
 	void terminate();
 
 	void sendMsg(Msg*);
+	void sendAck();
 public:
 	/* NOTE: ServerThread will need to share an I/O mutex */
 	ServerThread(int serverId, int serverSocket, struct sockaddr_in clientAddress, Msg* initialHandshake, AsyncLock* ioLock);

@@ -34,6 +34,7 @@ namespace Common
 		Receiver(int socket, int serverId, int clientId, struct sockaddr_in destAddr);
 		void startNewPayload(int sequenceSeed);
 		void handleMsg(Msg*);
+		bool isPayloadStarted();
 		bool isPayloadComplete();
 		void terminateCurrentTransmission();
 		Payload* getPayload();

@@ -31,6 +31,9 @@ typedef enum
 struct __declspec(dllexport) Msg
 {
 public:
+	Msg() {
+		memset(buffer, 0, BUFFER_LENGTH);
+	}
 	int  clientId;
 	int  serverId;
 	Type type;

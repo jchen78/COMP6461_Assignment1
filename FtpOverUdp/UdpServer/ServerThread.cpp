@@ -87,6 +87,8 @@ void ServerThread::run()
 		case RECEIVING:
 			if (currentMsg->type == RESP || currentMsg->type == RESP_ERR && strcmp(currentMsg->buffer, "EOF") == 0)
 				dispatchToReceiver();
+			else if (currentMsg->type == POST && !receiver->isPayloadStarted())
+				sendAck();
 			else if (currentMsg->type == TERMINATE) {
 				if (currentMsg->length == 0)
 					terminate();
@@ -127,17 +129,17 @@ void ServerThread::run()
 void ServerThread::startHandshake()
 {
 	currentState = HANDSHAKING;
-	isResponseComplete = false;
+	isResponseComplete = new bool(false);
 	sender = new Sender(socket, serverId, currentMsg->clientId, address);
 	receiver = new Receiver(socket, serverId, currentMsg->clientId, address);
-	currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, &isResponseComplete, HANDSHAKE, serverId % SEQUENCE_RANGE, "", 0);
+	currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, isResponseComplete, HANDSHAKE, serverId % SEQUENCE_RANGE, "", 0);
 	currentResponse->start();
 }
 
 void ServerThread::endHandshake()
 {
 	currentState = WAITING_FOR_REQUEST;
-	isResponseComplete = true; // Will stop sending HANDSHAKE after timeout (SenderThread will auto-destroy)
+	*isResponseComplete = true; // Will stop sending HANDSHAKE after timeout (SenderThread will auto-destroy)
 	currentResponse = NULL;
 }
 
@@ -196,8 +198,8 @@ void ServerThread::sendFile()
 	catch (exception e) {
 		currentState = WAITING_FOR_ACK;
 		sequenceNumber = currentMsg->sequenceNumber + 1;
-		isResponseComplete = false;
-		currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, &isResponseComplete, RESP_ERR, sequenceNumber, "NSF", 4);
+		isResponseComplete = new bool(false);
+		currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, isResponseComplete, RESP_ERR, sequenceNumber, "NSF", 4);
 		currentResponse->start();
 	}
 }
@@ -237,6 +239,7 @@ void ServerThread::startSender(Payload* payloadData)
 void ServerThread::getFile() {
 	currentState = RECEIVING;
 	receiver->startNewPayload(currentMsg->sequenceNumber);
+	sendAck();
 	filename = string(currentMsg->buffer, currentMsg->buffer + currentMsg->length);
 }
 
@@ -313,16 +316,13 @@ void ServerThread::notifyWrongState() {
 }
 
 void ServerThread::resetToReadyState() {
+	*isResponseComplete = true;
 	switch (currentState) {
 	case SENDING:
 		sender->terminateCurrentTransmission();
 		break;
 	case RECEIVING:
 		receiver->terminateCurrentTransmission();
-		break;
-	case HANDSHAKING:
-	case RENAMING:
-		isResponseComplete = true;
 		break;
 	}
 
@@ -332,6 +332,14 @@ void ServerThread::resetToReadyState() {
 void ServerThread::terminate() {
 	resetToReadyState();
 	currentState = EXITING;
+}
+
+void ServerThread::sendAck() {
+	Msg ack = Msg();
+	ack.length = 0;
+	ack.type = ACK;
+	ack.sequenceNumber = currentMsg->sequenceNumber;
+	sendMsg(&ack);
 }
 
 void ServerThread::sendMsg(Msg* msg) {

@@ -110,11 +110,11 @@ Msg* FtpServer::getMessage()
 }
 
 int FtpServer::getServerId(Msg* message) {
-	int serverId = message->serverId;
-	if (!serverIdExists(serverId))
-		return createServerThread();
+	int clientId = message->clientId;
+	if (clientIds.find(clientId) == clientIds.end())
+		clientIds.insert(make_pair(clientId, createServerThread()));
 
-	return serverId;
+	return clientIds[clientId];
 }
 
 bool FtpServer::serverIdExists(int serverId) {

@@ -52,6 +52,7 @@ namespace Common
 		SenderThread(int sendingSocket, int serverId, int clientId, struct sockaddr_in* destinationAddress, bool* isAcked, Type messageType, int sequenceNumber, char *packetContents, int packetLength);
 		void run();
 		~SenderThread() {
+			delete isAcked;
 			delete msg;
 		}
 	};

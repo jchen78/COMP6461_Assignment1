@@ -15,6 +15,8 @@ private:
 	sockaddr_in routerAddress;
 	map<int, sockaddr_in> clientMap;
 	Common::AsyncLock clientLock;
+
+	void log(string);
 public:
 	ClientListener(int clientSocket, int routerSocket, sockaddr_in routerAddress) : clientSocket(clientSocket), routerSocket(routerSocket), routerAddress(routerAddress), clientLock(false, -1) {}
 	map<int, sockaddr_in>* getMap() { return &clientMap; }

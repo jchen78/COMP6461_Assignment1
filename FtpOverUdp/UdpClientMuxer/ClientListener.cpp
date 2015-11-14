@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#include <string>
 #include <time.h>
 #include "ClientListener.h"
 
@@ -44,6 +45,8 @@ void ClientListener::run() {
 				exit(1);
 			}
 		} else {
+			string logItem = string("From client: (").append(to_string(buffer[8])).append(") - ").append(buffer + MSGHDRSIZE);
+			log(logItem);
 			if ((n = sendto(routerSocket, buffer, bufferLength, 0, (SOCKADDR *)&routerAddress, routerAddrLen)) != bufferLength) {
 				std::cerr << "ClientListener: Send error " << endl;
 				std::cerr << WSAGetLastError() << endl;
@@ -51,4 +54,21 @@ void ClientListener::run() {
 			}
 		}
 	}
+}
+
+void ClientListener::log(std::string logItem)
+{
+	time_t rawtime;
+	char* formattedTime;
+
+	time(&rawtime);
+	char* unformattedTime = asctime(localtime(&rawtime));
+	int length = strlen(unformattedTime);
+	formattedTime = new char[length];
+	memcpy(formattedTime, unformattedTime, length);
+	formattedTime[length - 1] = 0;
+
+	FILE *logFile = fopen("muxerLog.txt", "a");
+	fprintf(logFile, "Server (root): %s -- %s\r\n", formattedTime, logItem.c_str());
+	fclose(logFile);
 }

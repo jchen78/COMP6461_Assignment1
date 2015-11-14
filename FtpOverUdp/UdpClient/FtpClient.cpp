@@ -55,8 +55,10 @@ int FtpClient::msgSend(Msg * msg_ptr)
 	msg_ptr->serverId = serverIdentifier;
 	Payload* payload = new Payload();
 	payload->length = MSGHDRSIZE + msg_ptr->length;
+	payload->data = new char[payload->length];
 	memcpy(payload->data, (char*)msg_ptr, payload->length);
 	int n = rawSend(payload);
+	delete payload->data;
 	delete payload;
 	return (n-MSGHDRSIZE);
 }
@@ -118,6 +120,7 @@ Payload* FtpClient::rawGet()
 
 	Payload* data = new Payload();
 	data->length = bufferLength;
+	data->data = new char[bufferLength];
 	memcpy(data->data, buffer, bufferLength);
 	return data;
 }
@@ -143,10 +146,11 @@ void FtpClient::performGet()
 	cin >> filename;
 
 	receiver->startNewPayload(sequenceNumber);
-	bool* isAcked = false;
+	bool* isAcked = new bool(false);
 	char c_filename[20];
 	strcpy(c_filename, filename.c_str());
-	Common::SenderThread requestSender = Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isAcked, GET_FILE, sequenceNumber, c_filename, (int)filename.length());
+	Common::SenderThread* requestSender = new Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isAcked, GET_FILE, sequenceNumber, c_filename, (int)filename.length());
+	requestSender->start();
 
 	Msg* serverMsg = NULL;
 	while (!receiver->isPayloadComplete()) {
@@ -200,9 +204,10 @@ void FtpClient::performGet()
 void FtpClient::performList()
 {
 	receiver->startNewPayload(sequenceNumber);
-	bool* isAcked = false;
+	bool* isAcked = new bool(false);
 	char* message = NULL;
-	Common::SenderThread requestSender = Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isAcked, GET_LIST, sequenceNumber, message, 0);
+	Common::SenderThread* requestSender = new Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isAcked, GET_LIST, sequenceNumber, message, 0);
+	requestSender->start();
 
 	Msg* serverMsg = NULL;
 	while (!receiver->isPayloadComplete()) {
@@ -281,28 +286,33 @@ void FtpClient::performUpload()
 	fileToRead.read(contents->data, size);
 	fileToRead.close();
 	
-	bool isAcked = false;
-	Common::SenderThread* requestMessage = new Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, &isAcked, POST, sequenceNumber, new char[1], 0);
+	bool* isAcked = new bool(false);
+	int filenameLength = filename.length();
+	char* c_filename = new char[filenameLength];
+	strcpy(c_filename, filename.c_str());
+	Common::SenderThread* requestMessage = new Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isAcked, POST, sequenceNumber, c_filename, filenameLength);
 	requestMessage->start();
 
-	Msg* msg;
+	Msg msg;
 	do {
-		msg = msgGet();
-	} while (msg->type != ACK || msg->sequenceNumber != sequenceNumber);
-	isAcked = true;
+		msg = Msg(*msgGet());
+	} while (msg.type != ACK || msg.sequenceNumber != sequenceNumber);
+	*isAcked = true;
 
-	sender->initializePayload(contents->data, contents->length, sequenceNumber, msg);
+	sender->initializePayload(contents->data, contents->length, sequenceNumber, &msg);
 	delete contents;
 
+	sender->send();
 	while (!sender->isPayloadSent()) {
-		msg = msgGet();
-		if (msg->type == ACK)
+		memcpy(&msg, msgGet(), MSGHDRSIZE + BUFFER_LENGTH);
+		if (msg.type == ACK)
 			sender->processAck();
-		else if (msg->type == TYPE_ERR) {
+		else if (msg.type == TYPE_ERR) {
 			sender->terminateCurrentTransmission();
-			if (msg->sequenceNumber != sender->finalSequenceNumber() || strcmp(msg->buffer, "WFR") != 0) {
+			if (msg.sequenceNumber != sender->finalSequenceNumber() || strcmp(msg.buffer, "WFR") != 0) {
 				sendRstMessage();
 				cout << "Transmission failed (server was not ready). Please retry." << endl;
+				break;
 			}
 		}
 	}
@@ -312,8 +322,8 @@ void FtpClient::terminate()
 {
 	bool isAcked = false;
 	Msg* msg;
-	Common::SenderThread terminationStart = Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, &isAcked, TERMINATE, sequenceNumber, NULL, 0);
-	terminationStart.start();
+	Common::SenderThread* terminationStart = new Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, &isAcked, TERMINATE, sequenceNumber, NULL, 0);
+	terminationStart->start();
 
 	do {
 		msg = msgGet();
@@ -365,18 +375,28 @@ void FtpClient::showMenu()
 	cout << "2 : LIST " << endl;
 	cout << "3 : UPLOAD " << endl;
 	cout << "4 : RENAME " << endl;
-	cout << "3 : EXIT " << endl;
+	cout << "5 : EXIT " << endl;
 	cout << "Please select the operation that you want to perform : ";
 	
 	/* Check if invalid value is provided and reset if cin error flag is set */
-	if(!(cin >> optionVal) || optionVal < 1 || optionVal > 3)
+	if(!(cin >> optionVal) || optionVal < 1 || optionVal > 5)
 	{
-		cout << endl << "Input Types does not match " << endl;
+		cout << endl << "Input types does not match " << endl;
 		cin.clear();
 	}
 	
 	cin.ignore(250, '\n');
 	
+	// Clean up all messages in the buffer
+	Msg* msg = NULL;
+	while (waitTimeOut() > 0) {
+		msg = msgGet();
+		if (msg->type == RESP || msg->type == RESP_ERR)
+			sendRstMessage();
+
+		delete msg;
+	}
+
 	/* Based on the option selected by User, set the transfer type and invoke the appropriate function */
 	switch (optionVal)
 	{
@@ -428,7 +448,7 @@ bool FtpClient::startClient()
 	}
 	
 	cout <<"ftp_udp starting on host: "<<hostName<<endl;
-	cout <<"Type name of ftp client muxer: "<<endl;
+	cout <<"Type name of ftp client muxer: ";
 	getline(cin,serverName);
 	
 	if (!performHandshake())
@@ -475,21 +495,24 @@ bool FtpClient::performHandshake()
 	int sizeInt = sizeof(clientIdentifier);
 	Payload* clientIdRequest = new Payload();
 	clientIdRequest->length = sizeInt;
+	clientIdRequest->data = new char[4];
 	memcpy(clientIdRequest->data, &clientIdentifier, sizeInt);
 	rawSend(clientIdRequest);
 	delete clientIdRequest;
 
 	Payload* clientIdResponse = rawGet();
-	memcpy(&clientIdentifier, clientIdResponse, sizeof(clientIdentifier));
+	memcpy(&clientIdentifier, clientIdResponse->data, sizeof(clientIdentifier));
+	delete[] clientIdResponse->data;
 	delete clientIdResponse;
 
-	Msg* request = getInitialHandshakeMessage();
-	msgSend(request);
-	delete request;
+	bool* isHandshakeAcked = new bool(false);
+	Common::SenderThread* handshakeSender = new Common::SenderThread(clientSock, -1, clientIdentifier, &ServAddr, isHandshakeAcked, HANDSHAKE, 0, NULL, 0);
+	handshakeSender->start();
 
 	Msg* reply = msgGet();
+	*isHandshakeAcked = true;
 	log(string("Received handshake from server. Message: ").append(reply->buffer));
-	request = processFinalHandshakeMessage(reply);
+	Msg* request = processFinalHandshakeMessage(reply);
 	delete reply;
 
 	msgSend(request);

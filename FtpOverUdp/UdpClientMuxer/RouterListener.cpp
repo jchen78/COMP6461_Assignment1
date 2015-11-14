@@ -1,4 +1,6 @@
 #include "stdafx.h"
+#include <string>
+#include <time.h>
 #include <Common.h>
 #include "RouterListener.h"
 
@@ -21,9 +23,9 @@ void RouterListener::run() {
 			exit(1);
 		}
 
-		memset(&msg, 0, MSGHDRSIZE);
-		memset(msg.buffer, 0, BUFFER_LENGTH);
 		memcpy(&msg, buffer, bufferLength);
+		string logItem = string("From router: (").append(to_string(buffer[8])).append(") - ").append(msg.buffer);
+		log(logItem);
 
 		currentClient = (*clients)[msg.clientId];
 		int n;
@@ -38,4 +40,21 @@ void RouterListener::run() {
 }
 
 RouterListener::~RouterListener() {
+}
+
+void RouterListener::log(std::string logItem)
+{
+	time_t rawtime;
+	char* formattedTime;
+
+	time(&rawtime);
+	char* unformattedTime = asctime(localtime(&rawtime));
+	int length = strlen(unformattedTime);
+	formattedTime = new char[length];
+	memcpy(formattedTime, unformattedTime, length);
+	formattedTime[length - 1] = 0;
+
+	FILE *logFile = fopen("muxerLog.txt", "a");
+	fprintf(logFile, "Server (root): %s -- %s\r\n", formattedTime, logItem.c_str());
+	fclose(logFile);
 }

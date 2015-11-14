@@ -19,8 +19,6 @@ namespace Common
 		this->completedSet = {};
 		for (int i = 0; i < SEQUENCE_RANGE; i++)
 			this->currentWindow[i] = NULL;
-
-		sendAck(sequenceSeed);
 	}
 
 	void Receiver::handleMsg(Msg* msg) {
@@ -90,6 +88,14 @@ namespace Common
 			sequenceNumber += SEQUENCE_RANGE;
 
 		return sequenceNumber >= currentHead && sequenceNumber <= currentTail;
+	}
+
+	bool Receiver::isPayloadStarted() {
+		for (int i = 0; i < SEQUENCE_RANGE; i++)
+			if (currentWindow[i] != NULL)
+				return true;
+
+		return windowOrigin != 0 || !completedSet.empty();
 	}
 
 	bool Receiver::isPayloadComplete() {
