@@ -129,6 +129,7 @@ void FtpClient::sendRstMessage() {
 	Msg msg;
 	msg.type = TERMINATE;
 	msg.length = 4;
+	msg.sequenceNumber = sequenceNumber;
 	strcpy(msg.buffer, "RST");
 	msgSend(&msg);
 }
@@ -163,11 +164,26 @@ void FtpClient::performGet()
 		case RESP:
 			if (serverMsg->sequenceNumber == sequenceNumber)
 				*isAcked = true;
+			// No break: fall-through intended
 		case RESP_ERR:
-			receiver->handleMsg(serverMsg);
+			try { receiver->handleMsg(serverMsg); }
+			catch (exception e) {
+				if (serverMsg->sequenceNumber == (sequenceNumber + 1) % SEQUENCE_RANGE && strcmp(e.what(), "No such file.") == 0) {
+					*isAcked = true;
+					receiver->terminateCurrentTransmission();
+					cout << "No such file." << endl;
+					return;
+				}
+
+				throw e;
+			}
 			break;
 		case TYPE_ERR:
+			if (serverMsg->sequenceNumber == sequenceNumber && strcmp(serverMsg->buffer, "WFR") == 0)
+				break;
+
 			receiver->terminateCurrentTransmission();
+			*isAcked = true;
 			sendRstMessage();
 			cout << "Transmission failed (server was not ready). Please retry." << endl;
 			sequenceNumber = (serverMsg->sequenceNumber + 1) % SEQUENCE_RANGE;
@@ -222,6 +238,7 @@ void FtpClient::performList()
 			break;
 		case TYPE_ERR:
 			receiver->terminateCurrentTransmission();
+			*isAcked = true;
 			sendRstMessage();
 			cout << "Transmission failed (server was not ready). Please retry." << endl;
 			sequenceNumber = (serverMsg->sequenceNumber + 1) % SEQUENCE_RANGE;
@@ -234,7 +251,6 @@ void FtpClient::performList()
 	char* directoryContent = payload->data;
 	int payloadLength = payload->length;
 
-	// TODO: Correct when server doesn't receive final ACK (perhaps via select fn?)
 	{
 		Msg finalAck;
 		finalAck.length = 0;
@@ -273,7 +289,7 @@ void FtpClient::performUpload()
 	WIN32_FIND_DATA data;
 	HANDLE h = FindFirstFile(fullFileName.c_str(), &data);
 	if (h == INVALID_HANDLE_VALUE)
-		throw new exception("File not found.");
+		throw exception("File not found.");
 
 	FindClose(h);
 	int size = data.nFileSizeLow;
@@ -316,6 +332,8 @@ void FtpClient::performUpload()
 			}
 		}
 	}
+
+	sequenceNumber = sender->finalSequenceNumber();
 }
 
 void FtpClient::terminate()
@@ -345,13 +363,17 @@ void FtpClient::terminate()
 void FtpClient::log(const std::string &logItem)
 {
 	time_t rawtime;
-	struct tm * timeinfo;
+	char* formattedTime;
 
 	time(&rawtime);
-	timeinfo = localtime(&rawtime);
+	char* unformattedTime = asctime(localtime(&rawtime));
+	int length = strlen(unformattedTime);
+	formattedTime = new char[length];
+	memcpy(formattedTime, unformattedTime, length);
+	formattedTime[length - 1] = 0;
 
 	FILE *logFile = fopen("logfile.txt", "a");
-	fprintf(logFile, "Client (%d): %s --%s\r\n", clientIdentifier, logItem.c_str(), asctime(timeinfo));
+	fprintf(logFile, "Client (%d): %s --%s\r\n", clientIdentifier, formattedTime, logItem.c_str());
 	fclose(logFile);
 }
 
@@ -370,6 +392,8 @@ void FtpClient::setAckMessage(Msg* previousPart)
  */
 void FtpClient::showMenu()
 {
+	int lastSequenceNumber = sequenceNumber;
+	sequenceNumber = (sequenceNumber + 1) % SEQUENCE_RANGE;
 	int optionVal;
 	cout << "1 : GET " << endl;
 	cout << "2 : LIST " << endl;
@@ -396,6 +420,9 @@ void FtpClient::showMenu()
 
 		delete msg;
 	}
+
+	if (msg != NULL)
+		sequenceNumber = (sequenceNumber + 1) % SEQUENCE_RANGE;
 
 	/* Based on the option selected by User, set the transfer type and invoke the appropriate function */
 	switch (optionVal)
@@ -448,7 +475,7 @@ bool FtpClient::startClient()
 	}
 	
 	cout <<"ftp_udp starting on host: "<<hostName<<endl;
-	cout <<"Type name of ftp client muxer: ";
+	cout <<"Type the host name for the ftp client multiplexer: ";
 	getline(cin,serverName);
 	
 	if (!performHandshake())

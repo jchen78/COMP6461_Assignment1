@@ -37,6 +37,7 @@ namespace Common
 		bool isPayloadStarted();
 		bool isPayloadComplete();
 		void terminateCurrentTransmission();
+		int finalSequenceNumber();
 		Payload* getPayload();
 		~Receiver();
 	};

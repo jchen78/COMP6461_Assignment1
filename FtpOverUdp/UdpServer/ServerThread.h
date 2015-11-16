@@ -50,7 +50,7 @@ private:
 	void sendList();
 	Payload* getDirectoryContents();
 	void sendFile();
-	Payload* getFileContents(const char* fileName);
+	Payload* getFileContents();
 	void startSender(Payload* contents);
 	void dispatchToSender();
 	void getFile();
@@ -59,6 +59,7 @@ private:
 
 	void notifyWrongState();
 	void resetToReadyState();
+	void resetToReadyState(bool overrideSequenceNumber);
 	void terminate();
 
 	void sendMsg(Msg*);

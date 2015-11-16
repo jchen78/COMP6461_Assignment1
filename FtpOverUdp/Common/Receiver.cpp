@@ -28,8 +28,12 @@ namespace Common
 
 		sendAck(sequenceNumber);
 
+		if (msg->sequenceNumber == (sequenceSeed + 1) % SEQUENCE_RANGE && msg->type == RESP_ERR && strcmp(msg->buffer, "NSF") == 0)
+			throw std::exception("No such file.");
+
 		// Handle EOF
 		if (isEofMsg(msg)) {
+			windowOrigin++;
 			isComplete = true;
 			return;
 		}
@@ -64,7 +68,7 @@ namespace Common
 		if (msg->type != RESP_ERR)
 			return false;
 
-		return (strcmp(msg->buffer, "EOF") == 0);
+		return (msg->sequenceNumber == (windowOrigin + sequenceSeed) % SEQUENCE_RANGE && strcmp(msg->buffer, "EOF") == 0);
 	}
 
 	void Receiver::sendAck(int sequenceNumber) {
@@ -106,9 +110,13 @@ namespace Common
 		// Note: Nothing to do. Cost of freeing up resources deferred to either destructor or next transmission.
 	}
 
+	int Receiver::finalSequenceNumber() {
+		return (sequenceSeed + windowOrigin) % SEQUENCE_RANGE;
+	}
+
 	Payload* Receiver::getPayload() {
 		if (!isComplete)
-			throw new std::exception("Payload not yet complete");
+			throw std::exception("Payload not yet complete");
 
 		Payload* payload = new Payload();
 		payload->length = totalPayloadSize;

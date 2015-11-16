@@ -12,7 +12,7 @@
 
 #define CLIENT_PORT 5002
 #define FROM_ROUTER_PORT 5001
-#define TO_ROUTER_PORT 5000
+#define TO_ROUTER_PORT 7001
 
 using namespace std;
 
@@ -57,10 +57,6 @@ int createSocket(int listeningPort)
 
 int _tmain(int argc, _TCHAR* argv[])
 {
-	string hostname;
-	cout << "Please enter the router host name: ";
-	getline(cin, hostname);
-
 	WSADATA wsadata;
 	/* Initialize Windows Socket information */
 	if (WSAStartup(0x0202, &wsadata) != 0)
@@ -79,6 +75,10 @@ int _tmain(int argc, _TCHAR* argv[])
 
 	cout << "Client muxer starting on host " << muxerName << endl;
 
+	string hostname;
+	cout << "Please enter the router host name: ";
+	getline(cin, hostname);
+
 	int clientSocket = createSocket(CLIENT_PORT); // Socket for packets coming from clients to the muxer.
 	int fromRouterSocket = createSocket(FROM_ROUTER_PORT); // Socket for packets coming from router to muxer.
 
@@ -93,7 +93,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	rl.start();
 	cl.start();
 
-	cout << "Client muxer now operational on host " << muxerName << endl;
+	cout << "Client muxer now operational on host " << muxerName << ", with router on host " << hostname << endl;
 
 	while (true);
 

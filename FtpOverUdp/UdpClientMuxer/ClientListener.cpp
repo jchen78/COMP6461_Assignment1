@@ -1,6 +1,7 @@
 #include "stdafx.h"
 #include <string>
 #include <time.h>
+#include <Common.h>
 #include "ClientListener.h"
 
 #define RCV_BUFFER_SIZE 512
@@ -45,8 +46,13 @@ void ClientListener::run() {
 				exit(1);
 			}
 		} else {
-			string logItem = string("From client: (").append(to_string(buffer[8])).append(") - ").append(buffer + MSGHDRSIZE);
+			Msg current;
+			memcpy(&current, buffer, bufferLength);
+			string logItem = string("From client: (").append(to_string(current.type)).append(", ").append(to_string(current.sequenceNumber)).append(")");
+			if (current.type == TERMINATE)
+				logItem.append(current.buffer);
 			log(logItem);
+
 			if ((n = sendto(routerSocket, buffer, bufferLength, 0, (SOCKADDR *)&routerAddress, routerAddrLen)) != bufferLength) {
 				std::cerr << "ClientListener: Send error " << endl;
 				std::cerr << WSAGetLastError() << endl;
@@ -68,7 +74,12 @@ void ClientListener::log(std::string logItem)
 	memcpy(formattedTime, unformattedTime, length);
 	formattedTime[length - 1] = 0;
 
+	clientLock.waitForSignalling();
+
 	FILE *logFile = fopen("muxerLog.txt", "a");
-	fprintf(logFile, "Server (root): %s -- %s\r\n", formattedTime, logItem.c_str());
+	fprintf(logFile, "Client multiplexer (from client): %s -- %s\r\n", formattedTime, logItem.c_str());
 	fclose(logFile);
+
+	clientLock.finalizeSignalling();
+	clientLock.finalizeConsumption();
 }

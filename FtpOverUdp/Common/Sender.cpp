@@ -20,7 +20,7 @@ namespace Common
 	void Sender::initializePayload(const char* messageContents, int messageLength, int firstSequenceNumber, Msg* ackMsg)
 	{
 		if (messageContents == NULL)
-			throw new exception("Payload data cannot be null");
+			throw exception("Payload data cannot be null");
 
 		numberOfPackets = messageLength / BUFFER_LENGTH;
 		payloadSize = messageLength;
@@ -100,11 +100,11 @@ namespace Common
 	}
 
 	void Sender::terminateCurrentTransmission() {
-		for (int i = 0, currentIndex = currentWindowOrigin; i < WINDOW_SIZE; i++, currentIndex = (currentIndex + 1) % SEQUENCE_RANGE) {
-			if (currentWindow[currentIndex] != NULL) {
-				*windowState[currentIndex] = false;
-				windowState[currentIndex] = NULL;
-				currentWindow[currentIndex] = NULL;
+		for (int i = 0; i < WINDOW_SIZE; i++) {
+			if (windowState[i] != NULL) {
+				*windowState[i] = true;
+				windowState[i] = NULL;
+				currentWindow[i] = NULL;
 			}
 		}
 	}

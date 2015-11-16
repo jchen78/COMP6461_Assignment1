@@ -41,7 +41,7 @@ void ServerThread::run()
 			else if (currentMsg->type == HANDSHAKE)
 				notifyWrongState();
 			else
-				resetToReadyState();
+				resetToReadyState(true);
 			break;
 		case WAITING_FOR_REQUEST:
 			switch (currentMsg->type) {
@@ -60,6 +60,7 @@ void ServerThread::run()
 			case TERMINATE:
 				if (currentMsg->length == 0)
 					terminate();
+				break;
 			default:
 				notifyWrongState();
 				break;
@@ -80,14 +81,14 @@ void ServerThread::run()
 					terminate();
 				else
 					resetToReadyState();
-			} else
+			} else if (currentMsg->type != POST && currentMsg->sequenceNumber != sequenceNumber)
 				notifyWrongState();
 
 			break;
 		case RECEIVING:
 			if (currentMsg->type == RESP || currentMsg->type == RESP_ERR && strcmp(currentMsg->buffer, "EOF") == 0)
 				dispatchToReceiver();
-			else if (currentMsg->type == POST && !receiver->isPayloadStarted())
+			else if (currentMsg->type == POST && sequenceNumber == sequenceNumber)
 				sendAck();
 			else if (currentMsg->type == TERMINATE) {
 				if (currentMsg->length == 0)
@@ -146,6 +147,7 @@ void ServerThread::endHandshake()
 void ServerThread::sendList()
 {
 	currentState = SENDING;
+	sequenceNumber = currentMsg->sequenceNumber;
 	startSender(getDirectoryContents());
 }
 
@@ -166,7 +168,7 @@ Payload* ServerThread::getDirectoryContents()
 		if (!(ffd.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY))
 		{
 			char* currentFilename = new char[20];
-			memcpy(currentFilename, ffd.cFileName, 20);
+			strcpy(currentFilename, ffd.cFileName);
 			payloadData.push(currentFilename);
 			payloadLength += strlen(currentFilename) + 1;
 		}
@@ -180,7 +182,7 @@ Payload* ServerThread::getDirectoryContents()
 		strcpy(payloadContent->data + currentIndex, payloadData.front());
 		currentIndex += strlen(payloadData.front()) + 1;
 		if (currentIndex > payloadLength)
-			throw new exception("More files than expected. Please retry");
+			throw exception("More files than expected. Please retry");
 
 		payloadData.pop();
 	}
@@ -194,25 +196,34 @@ Payload* ServerThread::getDirectoryContents()
 void ServerThread::sendFile()
 {
 	currentState = SENDING;
-	try { startSender(getFileContents(currentMsg->buffer)); }
+	sequenceNumber = currentMsg->sequenceNumber;
+	try { startSender(getFileContents()); }
 	catch (exception e) {
-		currentState = WAITING_FOR_ACK;
-		sequenceNumber = currentMsg->sequenceNumber + 1;
+		currentState = WAITING_FOR_REQUEST;
+		sequenceNumber = (currentMsg->sequenceNumber + 1) % SEQUENCE_RANGE;
 		isResponseComplete = new bool(false);
-		currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, isResponseComplete, RESP_ERR, sequenceNumber, "NSF", 4);
-		currentResponse->start();
+		Msg errMsg = Msg();
+		errMsg.type = RESP_ERR;
+		errMsg.length = 4;
+		errMsg.sequenceNumber = sequenceNumber;
+		strcpy(errMsg.buffer, "NSF");
+		sendMsg(&errMsg);
 	}
 }
 
-Payload* ServerThread::getFileContents(const char* fileName)
+Payload* ServerThread::getFileContents()
 {
 	ioLock->waitForSignalling();
 
-	string fullFileName = string(filesDirectory).append(fileName);
+	char* c_filename = new char[currentMsg->length];
+	memcpy(c_filename, currentMsg->buffer, currentMsg->length);
+	string fullFileName = string(filesDirectory).append(c_filename);
 	WIN32_FIND_DATA data;
 	HANDLE h = FindFirstFile(fullFileName.c_str(), &data);
-	if (h == INVALID_HANDLE_VALUE)
-		throw new exception("File not found.");
+	if (h == INVALID_HANDLE_VALUE) {
+		throw exception("File not found.");
+		return NULL;
+	}
 
 	FindClose(h);
 	int size = data.nFileSizeLow;
@@ -238,7 +249,8 @@ void ServerThread::startSender(Payload* payloadData)
 
 void ServerThread::getFile() {
 	currentState = RECEIVING;
-	receiver->startNewPayload(currentMsg->sequenceNumber);
+	sequenceNumber = currentMsg->sequenceNumber;
+	receiver->startNewPayload(sequenceNumber);
 	sendAck();
 	filename = string(currentMsg->buffer, currentMsg->buffer + currentMsg->length);
 }
@@ -246,6 +258,7 @@ void ServerThread::getFile() {
 void ServerThread::dispatchToReceiver() {
 	receiver->handleMsg(currentMsg);
 	if (receiver->isPayloadComplete()) {
+		sequenceNumber = receiver->finalSequenceNumber();
 		currentState = WAITING_FOR_REQUEST;
 		saveFile(receiver->getPayload());
 	}
@@ -255,8 +268,10 @@ void ServerThread::dispatchToSender()
 {
 	std::cout << "ServerThread: ACK #" << std::to_string(currentMsg->sequenceNumber) << endl;
 	sender->processAck();
-	if (sender->isPayloadSent())
+	if (sender->isPayloadSent()) {
+		sequenceNumber = sender->finalSequenceNumber();
 		currentState = WAITING_FOR_REQUEST;
+	}
 }
 
 void ServerThread::saveFile(Payload* fileContents) {
@@ -286,7 +301,7 @@ void ServerThread::saveFile(Payload* fileContents) {
 void ServerThread::notifyWrongState() {
 	Msg errorNotification;
 	errorNotification.type = TYPE_ERR;
-	errorNotification.sequenceNumber = currentMsg->sequenceNumber;
+	errorNotification.sequenceNumber = sequenceNumber;
 	errorNotification.length = 4;
 	switch (currentState) {
 	case HANDSHAKING:
@@ -316,6 +331,14 @@ void ServerThread::notifyWrongState() {
 }
 
 void ServerThread::resetToReadyState() {
+	resetToReadyState(false);
+}
+
+void ServerThread::resetToReadyState(bool ignoreSequenceNumber) {
+	if (!ignoreSequenceNumber && currentMsg->sequenceNumber != (sequenceNumber + 1) % SEQUENCE_RANGE)
+		return;
+
+	sequenceNumber = currentMsg->sequenceNumber;
 	*isResponseComplete = true;
 	switch (currentState) {
 	case SENDING:
