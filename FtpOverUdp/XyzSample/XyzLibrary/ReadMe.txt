@@ -1,27 +1,20 @@
 ========================================================================
-    DYNAMIC LINK LIBRARY : Pilot Project Overview
+    DYNAMIC LINK LIBRARY : XyzLibrary Project Overview
 ========================================================================
 
-AppWizard has created this Pilot DLL for you.
+AppWizard has created this XyzLibrary DLL for you.  
 
 This file contains a summary of what you will find in each of the files that
-make up your Pilot application.
+make up your XyzLibrary application.
 
 
-Pilot.vcxproj
-    This is the main project file for VC++ projects generated using an Application Wizard.
-    It contains information about the version of Visual C++ that generated the file, and
+XyzLibrary.vcproj
+    This is the main project file for VC++ projects generated using an Application Wizard. 
+    It contains information about the version of Visual C++ that generated the file, and 
     information about the platforms, configurations, and project features selected with the
     Application Wizard.
 
-Pilot.vcxproj.filters
-    This is the filters file for VC++ projects generated using an Application Wizard. 
-    It contains information about the association between the files in your project 
-    and the filters. This association is used in the IDE to show grouping of files with
-    similar extensions under a specific node (for e.g. ".cpp" files are associated with the
-    "Source Files" filter).
-
-Pilot.cpp
+XyzLibrary.cpp
     This is the main DLL source file.
 
 /////////////////////////////////////////////////////////////////////////////
@@ -29,7 +22,7 @@ Other standard files:
 
 StdAfx.h, StdAfx.cpp
     These files are used to build a precompiled header (PCH) file
-    named Pilot.pch and a precompiled types file named StdAfx.obj.
+    named XyzLibrary.pch and a precompiled types file named StdAfx.obj.
 
 /////////////////////////////////////////////////////////////////////////////
 Other notes:

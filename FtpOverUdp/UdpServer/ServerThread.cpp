@@ -60,6 +60,11 @@ void ServerThread::run()
 			case TERMINATE:
 				if (currentMsg->length == 0)
 					terminate();
+				else {
+					// If the server thread is waiting for request, sequence numbers don't matter to the server.
+					sequenceNumber = currentMsg->sequenceNumber;
+					notifyWrongState();
+				}
 				break;
 			default:
 				notifyWrongState();
@@ -215,8 +220,9 @@ Payload* ServerThread::getFileContents()
 {
 	ioLock->waitForSignalling();
 
-	char* c_filename = new char[currentMsg->length];
+	char* c_filename = new char[currentMsg->length + 1];
 	memcpy(c_filename, currentMsg->buffer, currentMsg->length);
+	c_filename[currentMsg->length] = '\0';
 	string fullFileName = string(filesDirectory).append(c_filename);
 	WIN32_FIND_DATA data;
 	HANDLE h = FindFirstFile(fullFileName.c_str(), &data);

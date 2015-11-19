@@ -73,7 +73,7 @@ int _tmain(int argc, _TCHAR* argv[])
 		exit(1);
 	}
 
-	cout << "Client muxer starting on host " << muxerName << endl;
+	cout << "Client muktiplexer starting on host " << muxerName << endl;
 
 	string hostname;
 	cout << "Please enter the router host name: ";
@@ -93,7 +93,7 @@ int _tmain(int argc, _TCHAR* argv[])
 	rl.start();
 	cl.start();
 
-	cout << "Client muxer now operational on host " << muxerName << ", with router on host " << hostname << endl;
+	cout << "Client multiplexer now operational on host " << muxerName << ", with router on host " << hostname << endl;
 
 	while (true);
 

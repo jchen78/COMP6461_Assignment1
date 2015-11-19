@@ -50,7 +50,7 @@ class FtpClient
 		Common::Sender* sender;
 		
 		int waitTimeOut();
-		Msg* msgGet();
+		void msgGet(Msg*);
 		Payload* rawGet();
 		int msgSend(Msg *);				/* Sends the packed message to server */
 		int rawSend(Payload* data);
@@ -68,6 +68,8 @@ class FtpClient
 		void performUpload();
 		void performRename();
 		void terminate();
+
+		void resyncServer();
 
 		void log(const string &logItem);
 

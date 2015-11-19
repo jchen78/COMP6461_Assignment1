@@ -100,6 +100,7 @@ namespace Common
 	}
 
 	void Sender::terminateCurrentTransmission() {
+		isComplete = true;
 		for (int i = 0; i < WINDOW_SIZE; i++) {
 			if (windowState[i] != NULL) {
 				*windowState[i] = true;

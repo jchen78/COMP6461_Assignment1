@@ -85,24 +85,15 @@ int FtpClient::waitTimeOut() {
 	return select(0, &socket_set, 0, 0, &timeout);
 }
 
-/**
- * Function - msgGet
- * Usage: Blocks until the next incoming packet is completely received; returns the packet formatted as a message.
- *
- * @arg: void
- */
-Msg* FtpClient::msgGet()
-{
+void FtpClient::msgGet(Msg* msg) {
 	Payload* data = rawGet();
 	char* buffer = data->data;
 	
-	// must destruct after use!
-	Msg* msg = new Msg();
+	memset(msg->buffer, '\0', BUFFER_LENGTH);
 	memcpy(msg, buffer, MSGHDRSIZE);
 	memcpy(msg->buffer, buffer + MSGHDRSIZE, msg->length);
 
 	delete data;
-	return msg;
 }
 
 Payload* FtpClient::rawGet()
@@ -153,22 +144,19 @@ void FtpClient::performGet()
 	Common::SenderThread* requestSender = new Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isAcked, GET_FILE, sequenceNumber, c_filename, (int)filename.length());
 	requestSender->start();
 
-	Msg* serverMsg = NULL;
+	Msg serverMsg;
 	while (!receiver->isPayloadComplete()) {
-		if (serverMsg != NULL)
-			delete serverMsg;
-
-		serverMsg = msgGet();
-		log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg->sequenceNumber)));
-		switch (serverMsg->type) {
+		msgGet(&serverMsg);
+		log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg.sequenceNumber)));
+		switch (serverMsg.type) {
 		case RESP:
-			if (serverMsg->sequenceNumber == sequenceNumber)
+			if (serverMsg.sequenceNumber == sequenceNumber)
 				*isAcked = true;
 			// No break: fall-through intended
 		case RESP_ERR:
-			try { receiver->handleMsg(serverMsg); }
+			try { receiver->handleMsg(&serverMsg); }
 			catch (exception e) {
-				if (serverMsg->sequenceNumber == (sequenceNumber + 1) % SEQUENCE_RANGE && strcmp(e.what(), "No such file.") == 0) {
+				if (serverMsg.sequenceNumber == (sequenceNumber + 1) % SEQUENCE_RANGE && strcmp(e.what(), "No such file.") == 0) {
 					*isAcked = true;
 					receiver->terminateCurrentTransmission();
 					cout << "No such file." << endl;
@@ -179,19 +167,19 @@ void FtpClient::performGet()
 			}
 			break;
 		case TYPE_ERR:
-			if (serverMsg->sequenceNumber == sequenceNumber && strcmp(serverMsg->buffer, "WFR") == 0)
+			if (serverMsg.sequenceNumber == sequenceNumber && strcmp(serverMsg.buffer, "WFR") == 0)
 				break;
 
 			receiver->terminateCurrentTransmission();
 			*isAcked = true;
 			sendRstMessage();
 			cout << "Transmission failed (server was not ready). Please retry." << endl;
-			sequenceNumber = (serverMsg->sequenceNumber + 1) % SEQUENCE_RANGE;
+			sequenceNumber = (serverMsg.sequenceNumber + 1) % SEQUENCE_RANGE;
 			return;
 		}
 	}
 
-	sequenceNumber = (serverMsg->sequenceNumber + 1) % SEQUENCE_RANGE;
+	sequenceNumber = (serverMsg.sequenceNumber + 1) % SEQUENCE_RANGE;
 
 	// TODO: Test by re-sending EOF message.
 	{
@@ -200,9 +188,9 @@ void FtpClient::performGet()
 		finalAck.type = ACK;
 
 		while (waitTimeOut() > 0) {
-			serverMsg = msgGet();
-			if (serverMsg->type == RESP_ERR && strcmp(serverMsg->buffer, "EOF") == 0) {
-				finalAck.sequenceNumber = serverMsg->sequenceNumber;
+			msgGet(&serverMsg);
+			if (serverMsg.type == RESP_ERR && strcmp(serverMsg.buffer, "EOF") == 0) {
+				finalAck.sequenceNumber = serverMsg.sequenceNumber;
 				msgSend(&finalAck);
 			}
 		}
@@ -225,28 +213,28 @@ void FtpClient::performList()
 	Common::SenderThread* requestSender = new Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isAcked, GET_LIST, sequenceNumber, message, 0);
 	requestSender->start();
 
-	Msg* serverMsg = NULL;
+	Msg serverMsg;
 	while (!receiver->isPayloadComplete()) {
-		serverMsg = msgGet();
-		log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg->sequenceNumber)));
-		switch (serverMsg->type) {
+		msgGet(&serverMsg);
+		log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg.sequenceNumber)));
+		switch (serverMsg.type) {
 		case RESP:
-			if (serverMsg->sequenceNumber == sequenceNumber)
+			if (serverMsg.sequenceNumber == sequenceNumber)
 				*isAcked = true;
 		case RESP_ERR:
-			receiver->handleMsg(serverMsg);
+			receiver->handleMsg(&serverMsg);
 			break;
 		case TYPE_ERR:
 			receiver->terminateCurrentTransmission();
 			*isAcked = true;
 			sendRstMessage();
 			cout << "Transmission failed (server was not ready). Please retry." << endl;
-			sequenceNumber = (serverMsg->sequenceNumber + 1) % SEQUENCE_RANGE;
+			sequenceNumber = (serverMsg.sequenceNumber + 1) % SEQUENCE_RANGE;
 			return;
 		}
 	}
 
-	sequenceNumber = serverMsg->sequenceNumber + 1 % SEQUENCE_RANGE;
+	sequenceNumber = serverMsg.sequenceNumber + 1 % SEQUENCE_RANGE;
 	Payload* payload = receiver->getPayload();
 	char* directoryContent = payload->data;
 	int payloadLength = payload->length;
@@ -257,9 +245,9 @@ void FtpClient::performList()
 		finalAck.type = ACK;
 
 		while (waitTimeOut() > 0) {
-			serverMsg = msgGet();
-			if (serverMsg->type == RESP_ERR && strcmp(serverMsg->buffer, "EOF") == 0) {
-				finalAck.sequenceNumber = serverMsg->sequenceNumber;
+			msgGet(&serverMsg);
+			if (serverMsg.type == RESP_ERR && strcmp(serverMsg.buffer, "EOF") == 0) {
+				finalAck.sequenceNumber = serverMsg.sequenceNumber;
 				msgSend(&finalAck);
 			}
 		}
@@ -311,7 +299,7 @@ void FtpClient::performUpload()
 
 	Msg msg;
 	do {
-		msg = Msg(*msgGet());
+		msgGet(&msg);
 	} while (msg.type != ACK || msg.sequenceNumber != sequenceNumber);
 	*isAcked = true;
 
@@ -320,7 +308,7 @@ void FtpClient::performUpload()
 
 	sender->send();
 	while (!sender->isPayloadSent()) {
-		memcpy(&msg, msgGet(), MSGHDRSIZE + BUFFER_LENGTH);
+		msgGet(&msg);
 		if (msg.type == ACK)
 			sender->processAck();
 		else if (msg.type == TYPE_ERR) {
@@ -344,7 +332,7 @@ void FtpClient::terminate()
 	terminationStart->start();
 
 	do {
-		msg = msgGet();
+		msgGet(msg);
 	} while (msg->sequenceNumber != sequenceNumber || msg->type != ACK);
 	isAcked = true;
 
@@ -358,6 +346,32 @@ void FtpClient::terminate()
 	// Set artificially high wait time to make sure the message is completely flushed prior to exiting.
 	Sleep(250);
 	exit(0);
+}
+
+void FtpClient::resyncServer()
+{
+	// Clear out message queue
+	Payload* dequeuedPayload;
+	while (waitTimeOut() > 0) {
+		dequeuedPayload = rawGet();
+		delete dequeuedPayload;
+	}
+
+	// Reset server to ready state
+	sequenceNumber = (sequenceNumber + 1) % SEQUENCE_RANGE;
+	Msg response;
+	response.sequenceNumber = -1;
+	do {
+		sendRstMessage();
+		if (waitTimeOut() > 0)
+			msgGet(&response);
+	} while (response.sequenceNumber != sequenceNumber || response.type != TYPE_ERR || strcmp(response.buffer, "WFR") != 0);
+
+	// Clear out message queue
+	while (waitTimeOut() > 0) {
+		dequeuedPayload = rawGet();
+		delete dequeuedPayload;
+	}
 }
 
 void FtpClient::log(const std::string &logItem)
@@ -412,17 +426,8 @@ void FtpClient::showMenu()
 	cin.ignore(250, '\n');
 	
 	// Clean up all messages in the buffer
-	Msg* msg = NULL;
-	while (waitTimeOut() > 0) {
-		msg = msgGet();
-		if (msg->type == RESP || msg->type == RESP_ERR)
-			sendRstMessage();
-
-		delete msg;
-	}
-
-	if (msg != NULL)
-		sequenceNumber = (sequenceNumber + 1) % SEQUENCE_RANGE;
+	resyncServer();
+	sequenceNumber = (sequenceNumber + 1) % SEQUENCE_RANGE;
 
 	/* Based on the option selected by User, set the transfer type and invoke the appropriate function */
 	switch (optionVal)
@@ -536,11 +541,11 @@ bool FtpClient::performHandshake()
 	Common::SenderThread* handshakeSender = new Common::SenderThread(clientSock, -1, clientIdentifier, &ServAddr, isHandshakeAcked, HANDSHAKE, 0, NULL, 0);
 	handshakeSender->start();
 
-	Msg* reply = msgGet();
+	Msg reply;
+	msgGet(&reply);
 	*isHandshakeAcked = true;
-	log(string("Received handshake from server. Message: ").append(reply->buffer));
-	Msg* request = processFinalHandshakeMessage(reply);
-	delete reply;
+	log(string("Received handshake from server. Message: ").append(reply.buffer));
+	Msg* request = processFinalHandshakeMessage(&reply);
 
 	msgSend(request);
 	delete request;
