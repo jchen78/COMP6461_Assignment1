@@ -147,7 +147,7 @@ void FtpClient::performGet()
 	Msg serverMsg;
 	while (!receiver->isPayloadComplete()) {
 		msgGet(&serverMsg);
-		log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg.sequenceNumber)));
+		log(string("Received response with sequence number ").append(to_string((_ULonglong)serverMsg.sequenceNumber)));
 		switch (serverMsg.type) {
 		case RESP:
 			if (serverMsg.sequenceNumber == sequenceNumber)
@@ -216,7 +216,7 @@ void FtpClient::performList()
 	Msg serverMsg;
 	while (!receiver->isPayloadComplete()) {
 		msgGet(&serverMsg);
-		log(string("Received response with sequence number").append(to_string((_ULonglong)serverMsg.sequenceNumber)));
+		log(string("Received response with sequence number ").append(to_string((_ULonglong)serverMsg.sequenceNumber)));
 		switch (serverMsg.type) {
 		case RESP:
 			if (serverMsg.sequenceNumber == sequenceNumber)
@@ -309,6 +309,7 @@ void FtpClient::performUpload()
 	sender->send();
 	while (!sender->isPayloadSent()) {
 		msgGet(&msg);
+		log(string("Received response with sequence number: ").append(to_string((_ULonglong)msg.sequenceNumber)).append(". type: ").append(to_string((_ULonglong)msg.type)));
 		if (msg.type == ACK)
 			sender->processAck();
 		else if (msg.type == TYPE_ERR) {
@@ -361,6 +362,7 @@ void FtpClient::resyncServer()
 	sequenceNumber = (sequenceNumber + 1) % SEQUENCE_RANGE;
 	Msg response;
 	response.sequenceNumber = -1;
+	log("Re-syncing with server; multiple communications will be ignored until synchronization is complete.");
 	do {
 		sendRstMessage();
 		if (waitTimeOut() > 0)
@@ -372,6 +374,7 @@ void FtpClient::resyncServer()
 		dequeuedPayload = rawGet();
 		delete dequeuedPayload;
 	}
+	log("Completed re-sync.");
 }
 
 void FtpClient::log(const std::string &logItem)
