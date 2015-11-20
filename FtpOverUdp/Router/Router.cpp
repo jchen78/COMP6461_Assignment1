@@ -139,7 +139,8 @@ void Router::Run()
 	SOCKADDR from;
 	int RetVal, fromlen, recvlen, wait_count;
 	EVENT_LIST temp;
-	DWORD CurrentTime, count1, count2;
+	DWORD CurrentTime;
+	unsigned long long count1, count2;
 
 	count1=0; 
 	count2=0;
