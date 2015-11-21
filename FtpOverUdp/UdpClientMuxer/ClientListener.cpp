@@ -28,7 +28,7 @@ void ClientListener::run() {
 
 		memcpy(&clientId, buffer, sizeof(clientId));
 
-		if (clientId == -1) {
+		if (clientId == NULL_CLIENT_ID) {
 			// Assign & register new client ID
 			clientLock.waitForSignalling();
 			do {

@@ -118,34 +118,37 @@ Msg* FtpServer::getMessage()
 
 int FtpServer::getServerId(Msg* message) {
 	int clientId = message->clientId;
-	if (clientIds.find(clientId) == clientIds.end())
+	int requestServerId = message->serverId;
+	if (clientIds.find(clientId) == clientIds.end()) {
 		clientIds.insert(make_pair(clientId, createServerThread()));
-	else {
+		pastServerIds.insert(make_pair(clientId, clientIds[clientId]));
+	} else {
 		int currentServerId = clientIds[clientId];
-		if (message->type == HANDSHAKE && message->serverId == currentServerId) {
-			// Clean up current thread
-			isThreadActive[currentServerId] = false;
-			dispatchMessage(currentServerId, message);
-			if (areServerIdsReused) {
-				AsyncLock* currentLock = threadLocks[currentServerId];
-				currentLock->waitForSignalling();
-				messages.erase(currentServerId);
-				isThreadActive.erase(currentServerId);
-				threadLocks.erase(currentServerId);
-				currentLock->finalizeSignalling();
-				delete currentLock;
-			}
+		if (message->type == HANDSHAKE) {
+			if (requestServerId == currentServerId) {
+				// Clean up current thread
+				pastServerIds[clientId] = requestServerId;
+				isThreadActive[currentServerId] = false;
+				dispatchMessage(currentServerId, message);
+				if (areServerIdsReused) {
+					AsyncLock* currentLock = threadLocks[currentServerId];
+					currentLock->waitForSignalling();
+					messages.erase(currentServerId);
+					isThreadActive.erase(currentServerId);
+					threadLocks.erase(currentServerId);
+					currentLock->finalizeSignalling();
+					delete currentLock;
+				}
 
-			// Spawn new thread
-			clientIds[clientId] = createServerThread();
+				// Spawn new thread
+				clientIds[clientId] = createServerThread();
+			} else if (requestServerId == pastServerIds[clientId])
+				message->serverId = currentServerId;
 		}
 	}
 
-	return clientIds[clientId];
-}
-
-bool FtpServer::serverIdExists(int serverId) {
-	return threadLocks.find(serverId) != threadLocks.end();
+	int currentServerId = clientIds[clientId];
+	return (requestServerId == NULL_SERVER_ID || requestServerId == currentServerId) ? currentServerId : NULL_SERVER_ID;
 }
 
 int FtpServer::createServerThread() {
@@ -153,7 +156,7 @@ int FtpServer::createServerThread() {
 	do {
 		srand(time(NULL));
 		serverId = rand() % 256;
-	} while (serverIdExists(serverId));
+	} while (threadLocks.find(serverId) != threadLocks.end());
 
 	Msg msg = Msg();
 	std::memset(&msg, 0, sizeof(msg));
@@ -167,6 +170,11 @@ int FtpServer::createServerThread() {
 }
 
 void FtpServer::dispatchMessage(int serverId, Msg* message) {
+	if (serverId == NULL_SERVER_ID) {
+		log(string("Discarded message: ").append(describeMessage(message)).append(";"));
+		return;
+	}
+
 	message->serverId = serverId;
 	log(string("About to dispatch message: ").append(describeMessage(message)).append(";"));
 	

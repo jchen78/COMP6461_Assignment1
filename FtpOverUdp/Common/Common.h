@@ -7,6 +7,8 @@
 #define MSGHDRSIZE 20
 #define TIMER_DELAY 300
 #define HOSTID_RANGE 256
+#define NULL_SERVER_ID -1
+#define NULL_CLIENT_ID -1
 
 #include <winsock.h>
 #include <iostream>
@@ -15,7 +17,6 @@
 typedef enum
 {
 	HANDSHAKE = 1,
-	COMPLETE_HANDSHAKE = 2,
 	GET_LIST = 5,
 	GET_FILE = 6,
 	PUT = 15,

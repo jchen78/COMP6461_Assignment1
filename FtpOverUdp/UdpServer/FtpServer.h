@@ -54,6 +54,7 @@ class FtpServer
 		bool areServerIdsReused;
 		class AsyncLock ioLock;
 		class std::map<int, int> clientIds;
+		class std::map<int, int> pastServerIds;
 		class std::map<int, Msg> messages;
 		class std::map<int, bool> isThreadActive;
 		class std::map<int, AsyncLock*> threadLocks;
@@ -62,7 +63,6 @@ class FtpServer
 		void log(const std::string &logItem);	/* */
 		void dispatchMessage(int, Msg*);
 		int getServerId(Msg*);
-		bool serverIdExists(int);
 		int createServerThread();
 		std::string describeMessage(Msg*);
 	public:

@@ -55,9 +55,8 @@ class FtpClient
 		int msgSend(Msg *);				/* Sends the packed message to server */
 		int rawSend(Payload* data);
 	
-		bool performHandshake();		/* Initiates and completes 3-way handshake w/ the server */
+		bool performMuxerHandshake();		/* Initiates and completes 2-way handshake w/ the client multiplexer */
 		Msg* getInitialHandshakeMessage();
-		Msg* processFinalHandshakeMessage(Msg*);
 
 		void setAckMessage(Msg*);
 
@@ -69,7 +68,8 @@ class FtpClient
 		void performRename();
 		void terminate();
 
-		void resyncServer();
+		int syncCount;
+		void syncServer();
 
 		void log(const string &logItem);
 

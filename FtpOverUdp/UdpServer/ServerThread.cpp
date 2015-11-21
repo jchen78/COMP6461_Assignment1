@@ -34,18 +34,14 @@ void ServerThread::run()
 			currentState = STARTING_HANDSHAKE;
 			break;
 		case STARTING_HANDSHAKE:
+			initServerWithClientData();
 			startHandshake();
-			break;
-		case HANDSHAKING:
-			if (currentMsg->type == COMPLETE_HANDSHAKE)
-				endHandshake();
-			else if (currentMsg->type == HANDSHAKE)
-				notifyWrongState();
-			else
-				resetToReadyState(true);
 			break;
 		case WAITING_FOR_REQUEST:
 			switch (currentMsg->type) {
+			case HANDSHAKE:
+				startHandshake();
+				break;
 			case GET_LIST:
 				sendList();
 				break;
@@ -58,26 +54,10 @@ void ServerThread::run()
 			case PUT:
 				// TODO: Complete action
 				break;
-			case TERMINATE:
-				if (currentMsg->length == 0)
-					terminate();
-				else {
-					// If the server thread is waiting for request, sequence numbers don't matter to the server.
-					sequenceNumber = currentMsg->sequenceNumber;
-					notifyWrongState();
-				}
-				break;
 			default:
 				notifyWrongState();
 				break;
 			}
-			break;
-		case WAITING_FOR_ACK:
-			if (currentMsg->type == ACK && currentMsg->sequenceNumber == sequenceNumber)
-				currentState = WAITING_FOR_REQUEST;
-			else
-				notifyWrongState();
-
 			break;
 		case SENDING:
 			if (currentMsg->type == ACK)
@@ -126,21 +106,20 @@ void ServerThread::run()
 	delete this;
 }
 
-void ServerThread::startHandshake()
+void ServerThread::initServerWithClientData()
 {
-	currentState = HANDSHAKING;
-	isResponseComplete = new bool(false);
 	sender = new Sender(socket, serverId, currentMsg->clientId, address);
 	receiver = new Receiver(socket, serverId, currentMsg->clientId, address);
-	currentResponse = new SenderThread(socket, serverId, currentMsg->clientId, &address, isResponseComplete, HANDSHAKE, serverId % SEQUENCE_RANGE, "", 0);
-	currentResponse->start();
 }
 
-void ServerThread::endHandshake()
+void ServerThread::startHandshake()
 {
-	currentState = WAITING_FOR_REQUEST;
-	*isResponseComplete = true; // Will stop sending HANDSHAKE after timeout (SenderThread will auto-destroy)
-	currentResponse = NULL;
+	Msg handshakeReply;
+	handshakeReply.type = HANDSHAKE;
+	handshakeReply.sequenceNumber = serverId % SEQUENCE_RANGE;
+	handshakeReply.length = currentMsg->length;
+	memcpy(handshakeReply.buffer, currentMsg->buffer, handshakeReply.length);
+	sendMsg(&handshakeReply);
 }
 
 void ServerThread::sendList()
@@ -304,14 +283,8 @@ void ServerThread::notifyWrongState() {
 	errorNotification.sequenceNumber = sequenceNumber;
 	errorNotification.length = 4;
 	switch (currentState) {
-	case HANDSHAKING:
-		memcpy(errorNotification.buffer, "HSK", 4);
-		break;
 	case WAITING_FOR_REQUEST:
 		memcpy(errorNotification.buffer, "WFR", 4);
-		break;
-	case WAITING_FOR_ACK:
-		memcpy(errorNotification.buffer, "WFA", 4);
 		break;
 	case SENDING:
 		memcpy(errorNotification.buffer, "SND", 4);

@@ -18,8 +18,8 @@ using namespace std;
 FtpClient::FtpClient()
 {
 	connectionStatus = true;
-	clientIdentifier = -1;
-	serverIdentifier = -1;
+	clientIdentifier = NULL_CLIENT_ID;
+	serverIdentifier = NULL_SERVER_ID;
 	filesDirectory = string("clientFiles\\");
 }
 
@@ -349,7 +349,7 @@ void FtpClient::terminate()
 	exit(0);
 }
 
-void FtpClient::resyncServer()
+void FtpClient::syncServer()
 {
 	// Clear out message queue
 	Payload* dequeuedPayload;
@@ -358,22 +358,23 @@ void FtpClient::resyncServer()
 		delete dequeuedPayload;
 	}
 
-	// Reset server to ready state
-	sequenceNumber = (sequenceNumber + 1) % SEQUENCE_RANGE;
-	Msg response;
-	response.sequenceNumber = -1;
-	log("Re-syncing with server; multiple communications will be ignored until synchronization is complete.");
-	do {
-		sendRstMessage();
-		if (waitTimeOut() > 0)
-			msgGet(&response);
-	} while (response.sequenceNumber != sequenceNumber || response.type != TYPE_ERR || strcmp(response.buffer, "WFR") != 0);
+	log("Re-syncing with server; multiple communications will be omitted from the client log until synchronization is complete.");
+	bool* isAcked = new bool(false);
+	syncCount++;
+	(new Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isAcked, HANDSHAKE, sequenceNumber, (char*)&syncCount, sizeof(syncCount)))->start();
 
-	// Clear out message queue
-	while (waitTimeOut() > 0) {
-		dequeuedPayload = rawGet();
-		delete dequeuedPayload;
+	Msg serverResponse;
+	while (!(*isAcked)) {
+		msgGet(&serverResponse);
+		if (serverResponse.type == HANDSHAKE && serverResponse.serverId != serverIdentifier) {
+			int syncResponse;
+			memcpy(serverResponse.buffer, &syncResponse, sizeof(syncCount));
+			*isAcked = syncResponse == syncCount;
+		}
 	}
+
+
+
 	log("Completed re-sync.");
 }
 
@@ -429,7 +430,7 @@ void FtpClient::showMenu()
 	cin.ignore(250, '\n');
 	
 	// Clean up all messages in the buffer
-	resyncServer();
+	syncServer();
 	sequenceNumber = (sequenceNumber + 1) % SEQUENCE_RANGE;
 
 	/* Based on the option selected by User, set the transfer type and invoke the appropriate function */
@@ -486,7 +487,7 @@ bool FtpClient::startClient()
 	cout <<"Type the host name for the ftp client multiplexer: ";
 	getline(cin,serverName);
 	
-	if (!performHandshake())
+	if (!performMuxerHandshake())
 		return false;
 
 	receiver = new Common::Receiver(clientSock, serverIdentifier, clientIdentifier, ServAddr);
@@ -495,7 +496,7 @@ bool FtpClient::startClient()
 	return true;
 }
 
-bool FtpClient::performHandshake()
+bool FtpClient::performMuxerHandshake()
 {
 	/* Socket Creation */
 	if ((clientSock = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP)) < 0)
@@ -522,11 +523,6 @@ bool FtpClient::performHandshake()
 	ServAddr.sin_addr.S_un.S_addr = ResolveName(serverName);
 	ServAddr.sin_port = htons(HANDSHAKE_PORT);
 
-	// TODO
-	/* 2-way handshake w/ the muxer (reliable connection to muxer) to get client ID
-	 * 3-way handshake as usual (unreliable connection from muxer to router)
-	 */
-
 	int sizeInt = sizeof(clientIdentifier);
 	Payload* clientIdRequest = new Payload();
 	clientIdRequest->length = sizeInt;
@@ -540,19 +536,6 @@ bool FtpClient::performHandshake()
 	delete[] clientIdResponse->data;
 	delete clientIdResponse;
 
-	bool* isHandshakeAcked = new bool(false);
-	Common::SenderThread* handshakeSender = new Common::SenderThread(clientSock, -1, clientIdentifier, &ServAddr, isHandshakeAcked, HANDSHAKE, 0, NULL, 0);
-	handshakeSender->start();
-
-	Msg reply;
-	msgGet(&reply);
-	*isHandshakeAcked = true;
-	log(string("Received handshake from server. Message: ").append(reply.buffer));
-	Msg* request = processFinalHandshakeMessage(&reply);
-
-	msgSend(request);
-	delete request;
-
 	return true;
 }
 
@@ -563,20 +546,6 @@ Msg* FtpClient::getInitialHandshakeMessage()
 	request->length = BUFFER_LENGTH;
 	memset(request->buffer, 0, BUFFER_LENGTH);
 	strcpy(request->buffer, std::to_string((_ULonglong)clientIdentifier).c_str());
-	
-	return request;
-}
-
-Msg* FtpClient::processFinalHandshakeMessage(Msg *serverHandshake)
-{
-	serverIdentifier = serverHandshake->serverId;
-	sequenceNumber = serverHandshake->sequenceNumber;
-	
-	Msg* request = new Msg();
-	request->type = COMPLETE_HANDSHAKE;
-	request->length = BUFFER_LENGTH;
-	request->sequenceNumber = serverHandshake->sequenceNumber;
-	memset(request->buffer, 0, BUFFER_LENGTH);
 	
 	return request;
 }
