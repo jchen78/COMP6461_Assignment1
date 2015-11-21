@@ -51,9 +51,11 @@ class FtpServer
 		int clientLen;							/* Length of Server address data structure */
 		char serverName[HOSTNAME_LENGTH];		/* Server Name */
 		char filesDirectory[13];
+		bool areServerIdsReused;
 		class AsyncLock ioLock;
 		class std::map<int, int> clientIds;
 		class std::map<int, Msg> messages;
+		class std::map<int, bool> isThreadActive;
 		class std::map<int, AsyncLock*> threadLocks;
 
 		Msg* getMessage();

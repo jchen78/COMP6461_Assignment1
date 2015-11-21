@@ -56,6 +56,13 @@ FtpServer::FtpServer() : ioLock(false, 256)
 	}
 
 	log(string("Bound to port ").append(to_string((_ULonglong)ServerPort)));
+
+	int option;
+	cout << "Do you want to reuse server IDs?" << endl;
+	cout << "If not, there will be a limit of 256 operations in total, across all threads." << endl;
+	cout << "Please enter 1 to reuse, or 0 otherwise: ";
+	cin >> option;
+	areServerIdsReused = option == 1;
 }
 
 /**
@@ -113,6 +120,26 @@ int FtpServer::getServerId(Msg* message) {
 	int clientId = message->clientId;
 	if (clientIds.find(clientId) == clientIds.end())
 		clientIds.insert(make_pair(clientId, createServerThread()));
+	else {
+		int currentServerId = clientIds[clientId];
+		if (message->type == HANDSHAKE && message->serverId == currentServerId) {
+			// Clean up current thread
+			isThreadActive[currentServerId] = false;
+			dispatchMessage(currentServerId, message);
+			if (areServerIdsReused) {
+				AsyncLock* currentLock = threadLocks[currentServerId];
+				currentLock->waitForSignalling();
+				messages.erase(currentServerId);
+				isThreadActive.erase(currentServerId);
+				threadLocks.erase(currentServerId);
+				currentLock->finalizeSignalling();
+				delete currentLock;
+			}
+
+			// Spawn new thread
+			clientIds[clientId] = createServerThread();
+		}
+	}
 
 	return clientIds[clientId];
 }
@@ -131,7 +158,8 @@ int FtpServer::createServerThread() {
 	Msg msg = Msg();
 	std::memset(&msg, 0, sizeof(msg));
 	messages.insert(std::make_pair(serverId, msg));
-	ServerThread* newThread = new ServerThread(serverId, serverSock, ClientAddr, &messages[serverId], &ioLock);
+	isThreadActive.insert(std::make_pair(serverId, true));
+	ServerThread* newThread = new ServerThread(serverId, serverSock, ClientAddr, &isThreadActive[serverId], &messages[serverId], &ioLock);
 	threadLocks.insert(std::make_pair(serverId, newThread->getSync()));
 	newThread->start();
 

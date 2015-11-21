@@ -8,21 +8,22 @@
 using namespace std;
 
 /*-------------------------------ServerThread Class--------------------------------*/
-ServerThread::ServerThread(int serverId, int serverSocket, struct sockaddr_in clientAddress, Msg* initialHandshake, AsyncLock* ioLock) :
-outerSync(true, serverId)
+ServerThread::ServerThread(int serverId, int serverSocket, struct sockaddr_in clientAddress, bool* isActive, Msg* initialHandshake, AsyncLock* ioLock)
 {
 	this->serverId = serverId;
 	this->socket = serverSocket;
 	this->address = clientAddress;
 	this->currentState = INITIALIZING;
+	this->isActive = isActive;
 	this->currentMsg = initialHandshake;
 	this->ioLock = ioLock;
+	this->outerSync = new AsyncLock(true, serverId);
 	strcpy(this->filesDirectory, "serverFiles\\");
 }
 
 int ServerThread::getId() { return serverId; }
 
-AsyncLock* ServerThread::getSync() { return &outerSync; }
+AsyncLock* ServerThread::getSync() { return outerSync; }
 
 void ServerThread::run()
 {
@@ -115,20 +116,13 @@ void ServerThread::run()
 			} else
 				notifyWrongState();
 			break;
-		case EXITING:
-			if (currentMsg->type == ACK)
-				currentState = TERMINATED;
-			else
-				notifyWrongState();
-
-			break;
 		}
 
-		outerSync.finalizeConsumption();
-		if (currentState != TERMINATED)
-			outerSync.waitForConsumption();
-	} while (currentState != TERMINATED);
+		outerSync->finalizeConsumption();
+		outerSync->waitForConsumption();
+	} while (*isActive);
 
+	resetToReadyState();
 	delete this;
 }
 
@@ -328,9 +322,6 @@ void ServerThread::notifyWrongState() {
 	case RENAMING:
 		memcpy(errorNotification.buffer, "RNM", 4);
 		break;
-	case EXITING:
-		memcpy(errorNotification.buffer, "EXT", 4);
-		break;
 	}
 
 	sendMsg(&errorNotification);
@@ -356,11 +347,6 @@ void ServerThread::resetToReadyState(bool ignoreSequenceNumber) {
 	}
 
 	currentState = WAITING_FOR_REQUEST;
-}
-
-void ServerThread::terminate() {
-	resetToReadyState();
-	currentState = EXITING;
 }
 
 void ServerThread::sendAck() {

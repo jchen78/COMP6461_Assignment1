@@ -16,9 +16,7 @@ typedef enum {
 	WAITING_FOR_ACK,
 	SENDING,
 	RECEIVING,
-	RENAMING,
-	EXITING,
-	TERMINATED
+	RENAMING
 } ServerState;
 
 class ServerThread : public Thread
@@ -33,9 +31,10 @@ private:
 	AsyncLock* ioLock;
 
 	// Communication with server multiplexer
-	class AsyncLock outerSync;
+	class AsyncLock* outerSync;
 	ServerState currentState;
 	struct Msg* currentMsg;
+	bool* isActive;
 
 	class Sender* sender;
 	class Receiver* receiver;
@@ -60,13 +59,12 @@ private:
 	void notifyWrongState();
 	void resetToReadyState();
 	void resetToReadyState(bool overrideSequenceNumber);
-	void terminate();
 
 	void sendMsg(Msg*);
 	void sendAck();
 public:
 	/* NOTE: ServerThread will need to share an I/O mutex */
-	ServerThread(int serverId, int serverSocket, struct sockaddr_in clientAddress, Msg* initialHandshake, AsyncLock* ioLock);
+	ServerThread(int serverId, int serverSocket, struct sockaddr_in clientAddress, bool *isActive, Msg *initialHandshake, AsyncLock *ioLock);
 	int getId();
 	AsyncLock* getSync();
 	virtual void run();
