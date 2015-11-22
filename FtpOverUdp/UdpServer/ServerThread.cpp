@@ -55,46 +55,21 @@ void ServerThread::run()
 				// TODO: Complete action
 				break;
 			default:
-				notifyWrongState();
+				// TODO: Log
 				break;
 			}
 			break;
 		case SENDING:
 			if (currentMsg->type == ACK)
 				dispatchToSender();
-			else if (currentMsg->type == TERMINATE) {
-				if (currentMsg->length == 0)
-					terminate();
-				else
-					resetToReadyState();
-			} else if (currentMsg->type != POST && currentMsg->sequenceNumber != sequenceNumber)
-				notifyWrongState();
-
 			break;
 		case RECEIVING:
 			if (currentMsg->type == RESP || currentMsg->type == RESP_ERR && strcmp(currentMsg->buffer, "EOF") == 0)
 				dispatchToReceiver();
 			else if (currentMsg->type == POST && sequenceNumber == sequenceNumber)
 				sendAck();
-			else if (currentMsg->type == TERMINATE) {
-				if (currentMsg->length == 0)
-					terminate();
-				else
-					resetToReadyState();
-			} else
-				notifyWrongState();
-
 			break;
 		case RENAMING:
-			if (currentMsg->type == RESP) {
-				// TODO: Complete action
-			} else if (currentMsg->type == TERMINATE) {
-				if (currentMsg->length == 0)
-					terminate();
-				else
-					resetToReadyState();
-			} else
-				notifyWrongState();
 			break;
 		}
 
@@ -102,7 +77,9 @@ void ServerThread::run()
 		outerSync->waitForConsumption();
 	} while (*isActive);
 
-	resetToReadyState();
+	sender->terminateCurrentTransmission();
+	receiver->terminateCurrentTransmission();
+	outerSync->finalizeConsumption();
 	delete this;
 }
 
@@ -110,6 +87,7 @@ void ServerThread::initServerWithClientData()
 {
 	sender = new Sender(socket, serverId, currentMsg->clientId, address);
 	receiver = new Receiver(socket, serverId, currentMsg->clientId, address);
+	currentState = WAITING_FOR_REQUEST;
 }
 
 void ServerThread::startHandshake()
@@ -179,7 +157,6 @@ void ServerThread::sendFile()
 	catch (exception e) {
 		currentState = WAITING_FOR_REQUEST;
 		sequenceNumber = (currentMsg->sequenceNumber + 1) % SEQUENCE_RANGE;
-		isResponseComplete = new bool(false);
 		Msg errMsg = Msg();
 		errMsg.type = RESP_ERR;
 		errMsg.length = 4;
@@ -275,51 +252,6 @@ void ServerThread::saveFile(Payload* fileContents) {
 
 	ioLock->finalizeSignalling();
 	ioLock->finalizeConsumption();
-}
-
-void ServerThread::notifyWrongState() {
-	Msg errorNotification;
-	errorNotification.type = TYPE_ERR;
-	errorNotification.sequenceNumber = sequenceNumber;
-	errorNotification.length = 4;
-	switch (currentState) {
-	case WAITING_FOR_REQUEST:
-		memcpy(errorNotification.buffer, "WFR", 4);
-		break;
-	case SENDING:
-		memcpy(errorNotification.buffer, "SND", 4);
-		break;
-	case RECEIVING:
-		memcpy(errorNotification.buffer, "RCV", 4);
-		break;
-	case RENAMING:
-		memcpy(errorNotification.buffer, "RNM", 4);
-		break;
-	}
-
-	sendMsg(&errorNotification);
-}
-
-void ServerThread::resetToReadyState() {
-	resetToReadyState(false);
-}
-
-void ServerThread::resetToReadyState(bool ignoreSequenceNumber) {
-	if (!ignoreSequenceNumber && currentMsg->sequenceNumber != (sequenceNumber + 1) % SEQUENCE_RANGE)
-		return;
-
-	sequenceNumber = currentMsg->sequenceNumber;
-	*isResponseComplete = true;
-	switch (currentState) {
-	case SENDING:
-		sender->terminateCurrentTransmission();
-		break;
-	case RECEIVING:
-		receiver->terminateCurrentTransmission();
-		break;
-	}
-
-	currentState = WAITING_FOR_REQUEST;
 }
 
 void ServerThread::sendAck() {

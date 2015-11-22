@@ -20,6 +20,7 @@ FtpClient::FtpClient()
 	connectionStatus = true;
 	clientIdentifier = NULL_CLIENT_ID;
 	serverIdentifier = NULL_SERVER_ID;
+	syncCount = 0;
 	filesDirectory = string("clientFiles\\");
 }
 
@@ -87,11 +88,9 @@ int FtpClient::waitTimeOut() {
 
 void FtpClient::msgGet(Msg* msg) {
 	Payload* data = rawGet();
-	char* buffer = data->data;
 	
 	memset(msg->buffer, '\0', BUFFER_LENGTH);
-	memcpy(msg, buffer, MSGHDRSIZE);
-	memcpy(msg->buffer, buffer + MSGHDRSIZE, msg->length);
+	memcpy(msg, data->data, data->length);
 
 	delete data;
 }
@@ -166,16 +165,6 @@ void FtpClient::performGet()
 				throw e;
 			}
 			break;
-		case TYPE_ERR:
-			if (serverMsg.sequenceNumber == sequenceNumber && strcmp(serverMsg.buffer, "WFR") == 0)
-				break;
-
-			receiver->terminateCurrentTransmission();
-			*isAcked = true;
-			sendRstMessage();
-			cout << "Transmission failed (server was not ready). Please retry." << endl;
-			sequenceNumber = (serverMsg.sequenceNumber + 1) % SEQUENCE_RANGE;
-			return;
 		}
 	}
 
@@ -224,13 +213,6 @@ void FtpClient::performList()
 		case RESP_ERR:
 			receiver->handleMsg(&serverMsg);
 			break;
-		case TYPE_ERR:
-			receiver->terminateCurrentTransmission();
-			*isAcked = true;
-			sendRstMessage();
-			cout << "Transmission failed (server was not ready). Please retry." << endl;
-			sequenceNumber = (serverMsg.sequenceNumber + 1) % SEQUENCE_RANGE;
-			return;
 		}
 	}
 
@@ -312,14 +294,6 @@ void FtpClient::performUpload()
 		log(string("Received response with sequence number: ").append(to_string((_ULonglong)msg.sequenceNumber)).append(". type: ").append(to_string((_ULonglong)msg.type)));
 		if (msg.type == ACK)
 			sender->processAck();
-		else if (msg.type == TYPE_ERR) {
-			sender->terminateCurrentTransmission();
-			if (msg.sequenceNumber != sender->finalSequenceNumber() || strcmp(msg.buffer, "WFR") != 0) {
-				sendRstMessage();
-				cout << "Transmission failed (server was not ready). Please retry." << endl;
-				break;
-			}
-		}
 	}
 
 	sequenceNumber = sender->finalSequenceNumber();
@@ -368,12 +342,12 @@ void FtpClient::syncServer()
 		msgGet(&serverResponse);
 		if (serverResponse.type == HANDSHAKE && serverResponse.serverId != serverIdentifier) {
 			int syncResponse;
-			memcpy(serverResponse.buffer, &syncResponse, sizeof(syncCount));
+			memcpy(&syncResponse, serverResponse.buffer, sizeof(syncCount));
 			*isAcked = syncResponse == syncCount;
 		}
 	}
 
-
+	serverIdentifier = serverResponse.serverId;
 
 	log("Completed re-sync.");
 }

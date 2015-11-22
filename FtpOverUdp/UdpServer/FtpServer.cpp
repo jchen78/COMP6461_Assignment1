@@ -16,6 +16,12 @@ using namespace std;
  */
 FtpServer::FtpServer() : ioLock(false, 256)
 {
+	int option;
+	cout << "Do you want to reuse server IDs? If not, there will be a limit of 256 operations in total, across all threads." << endl;
+	cout << "Please enter 1 to reuse, or 0 otherwise: ";
+	cin >> option;
+	areServerIdsReused = option == 1;
+
 	WSADATA wsadata;
 	/* Initialize Windows Socket information */
 	if (WSAStartup(0x0202,&wsadata)!=0)
@@ -56,13 +62,6 @@ FtpServer::FtpServer() : ioLock(false, 256)
 	}
 
 	log(string("Bound to port ").append(to_string((_ULonglong)ServerPort)));
-
-	int option;
-	cout << "Do you want to reuse server IDs?" << endl;
-	cout << "If not, there will be a limit of 256 operations in total, across all threads." << endl;
-	cout << "Please enter 1 to reuse, or 0 otherwise: ";
-	cin >> option;
-	areServerIdsReused = option == 1;
 }
 
 /**
@@ -134,7 +133,6 @@ int FtpServer::getServerId(Msg* message) {
 					AsyncLock* currentLock = threadLocks[currentServerId];
 					currentLock->waitForSignalling();
 					messages.erase(currentServerId);
-					isThreadActive.erase(currentServerId);
 					threadLocks.erase(currentServerId);
 					currentLock->finalizeSignalling();
 					delete currentLock;
@@ -143,7 +141,7 @@ int FtpServer::getServerId(Msg* message) {
 				// Spawn new thread
 				clientIds[clientId] = createServerThread();
 			} else if (requestServerId == pastServerIds[clientId])
-				message->serverId = currentServerId;
+				requestServerId = currentServerId;
 		}
 	}
 

@@ -37,8 +37,6 @@ private:
 	class Sender* sender;
 	class Receiver* receiver;
 	std::string filename;
-	SenderThread* currentResponse;
-	bool* isResponseComplete;
 	int sequenceNumber;
 
 	// Private methods to handle requests
@@ -54,10 +52,6 @@ private:
 	void dispatchToReceiver();
 	void saveFile(Payload* fileContents);
 
-	void notifyWrongState();
-	void resetToReadyState();
-	void resetToReadyState(bool overrideSequenceNumber);
-
 	void sendMsg(Msg*);
 	void sendAck();
 public:
@@ -69,8 +63,7 @@ public:
 	virtual ~ServerThread() {
 		if (sender != NULL)
 			delete sender;
-
-		if (currentResponse != NULL)
-			delete currentResponse;
+		if (receiver != NULL)
+			delete receiver;
 	}
 };

@@ -25,8 +25,6 @@ void RouterListener::run() {
 
 		memcpy(&msg, buffer, bufferLength);
 		string logItem = string("From router: (").append(to_string(msg.type)).append(", ").append(to_string(msg.sequenceNumber)).append(")");
-		if (msg.type == TYPE_ERR)
-			logItem.append(msg.buffer);
 		log(logItem);
 
 		currentClient = (*clients)[msg.clientId];
