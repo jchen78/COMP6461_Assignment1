@@ -390,8 +390,6 @@ void FtpClient::showMenu()
 	cout << "1 : GET " << endl;
 	cout << "2 : LIST " << endl;
 	cout << "3 : UPLOAD " << endl;
-	cout << "4 : RENAME " << endl;
-	cout << "5 : EXIT " << endl;
 	cout << "Please select the operation that you want to perform : ";
 	
 	/* Check if invalid value is provided and reset if cin error flag is set */

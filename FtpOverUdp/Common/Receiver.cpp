@@ -26,10 +26,11 @@ namespace Common
 		int sequenceNumber = msg->sequenceNumber;
 		int windowEnd = (windowOrigin + sequenceSeed) % SEQUENCE_RANGE + WINDOW_SIZE;
 
-		sendAck(sequenceNumber);
 
-		if (msg->sequenceNumber == (sequenceSeed + 1) % SEQUENCE_RANGE && msg->type == RESP_ERR && strcmp(msg->buffer, "NSF") == 0)
+		if (msg->sequenceNumber == (sequenceSeed + 1) % SEQUENCE_RANGE && msg->type == RESP_ERR && strcmp(msg->buffer, "NSF") == 0) {
+			sendAck(sequenceNumber);
 			throw std::exception("No such file.");
+		}
 
 		// Handle EOF
 		if (isEofMsg(msg)) {
@@ -38,11 +39,13 @@ namespace Common
 			if (expectedSize == totalPayloadSize) {
 				windowOrigin++;
 				isComplete = true;
+				sendAck(sequenceNumber);
 			}
 
 			return;
 		}
 
+		sendAck(sequenceNumber);
 		if (!isSequenceNumberInWindow(sequenceNumber))
 			return;
 

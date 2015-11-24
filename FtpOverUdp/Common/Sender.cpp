@@ -56,7 +56,7 @@ namespace Common
 		// merely ensure that all slots in the current window are populated.
 		for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin + i < numberOfPackets; i++) {
 			int currentIndex = (currentWindowOrigin + sequenceSeed + i) % SEQUENCE_RANGE;
-			int currentPayloadIndex = (currentWindowOrigin + i);
+			int currentPayloadIndex = currentWindowOrigin + i;
 			if (windowState[currentIndex] == NULL) {
 				bool* currentFlag = new bool(false);
 				int currentChar = currentPayloadIndex * BUFFER_LENGTH;
