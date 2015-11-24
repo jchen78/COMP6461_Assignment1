@@ -52,7 +52,10 @@ void ServerThread::run()
 				getFile();
 				break;
 			case PUT:
-				// TODO: Complete action
+				startRename();
+				break;
+			case RESP_ERR:
+				sendAck();
 				break;
 			default:
 				// TODO: Log
@@ -70,6 +73,25 @@ void ServerThread::run()
 				sendAck();
 			break;
 		case RENAMING:
+			if (currentMsg->sequenceNumber == sequenceNumber) {
+				switch (currentMsg->type) {
+				case PUT:
+					sendAck();
+					break;
+				case RESP:
+					notifyFilenameCollision();
+					break;
+				}
+			} else if (currentMsg->sequenceNumber == (sequenceNumber + 1) % SEQUENCE_RANGE) {
+				if (currentMsg->type == RESP)
+					performRename();
+				else if (currentMsg->type == RESP_ERR) {
+					filename = "";
+					sequenceNumber = currentMsg->sequenceNumber;
+					currentState = WAITING_FOR_REQUEST;
+				}
+			}
+			
 			break;
 		}
 
@@ -218,6 +240,49 @@ void ServerThread::dispatchToReceiver() {
 		currentState = WAITING_FOR_REQUEST;
 		saveFile(receiver->getPayload());
 	}
+}
+
+void ServerThread::startRename() {
+	filename = string(filesDirectory).append(currentMsg->buffer);
+	sequenceNumber = currentMsg->sequenceNumber;
+
+	ioLock->waitForSignalling();
+
+	if (PathFileExists(filename.c_str()))
+		notifyFileError();
+	else {
+		sendAck();
+		currentState = RENAMING;
+	}
+
+	ioLock->finalizeSignalling();
+	ioLock->finalizeConsumption();
+}
+
+void ServerThread::performRename() {
+	string newFilename = string(filesDirectory).append(currentMsg->buffer);
+	sequenceNumber = currentMsg->sequenceNumber;
+
+	ioLock->waitForSignalling();
+
+	if (PathFileExists(newFilename.c_str()))
+		notifyFileError();
+	else
+		rename(filename.c_str(), newFilename.c_str());
+
+	ioLock->finalizeSignalling();
+	ioLock->finalizeConsumption();
+}
+
+void ServerThread::notifyFileError() {
+	Msg errorMessage = Msg();
+	memset(&errorMessage, '\0', sizeof(errorMessage));
+	errorMessage.type = RESP_ERR;
+	errorMessage.length = 4;
+
+	strcpy(errorMessage.buffer, "FAE");
+
+	sendMsg(&errorMessage);
 }
 
 void ServerThread::dispatchToSender()

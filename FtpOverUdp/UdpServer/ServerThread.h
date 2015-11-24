@@ -51,6 +51,9 @@ private:
 	void getFile();
 	void dispatchToReceiver();
 	void saveFile(Payload* fileContents);
+	void startRename();
+	void performRename();
+	void notifyFileError();
 
 	void sendMsg(Msg*);
 	void sendAck();
