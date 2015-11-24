@@ -15,6 +15,10 @@ namespace Common
 		this->clientId = clientId;
 		
 		completePayload = NULL;
+		for (int i = 0; i < SEQUENCE_RANGE; i++) {
+			currentWindow[i] = NULL;
+			windowState[i] = NULL;
+		}
 	}
 
 	void Sender::initializePayload(const char* messageContents, int messageLength, int firstSequenceNumber, Msg* ackMsg)
@@ -52,11 +56,11 @@ namespace Common
 		// merely ensure that all slots in the current window are populated.
 		for (int i = 0; i < WINDOW_SIZE && currentWindowOrigin + i < numberOfPackets; i++) {
 			int currentIndex = (currentWindowOrigin + sequenceSeed + i) % SEQUENCE_RANGE;
-			int currentPayloadIndex = (currentWindowOrigin + i) % SEQUENCE_RANGE;
+			int currentPayloadIndex = (currentWindowOrigin + i);
 			if (windowState[currentIndex] == NULL) {
 				bool* currentFlag = new bool(false);
 				int currentChar = currentPayloadIndex * BUFFER_LENGTH;
-				int currentSize = currentPayloadIndex == (numberOfPackets - 1) ? (payloadSize - currentChar - 1) : BUFFER_LENGTH;
+				int currentSize = currentPayloadIndex == (numberOfPackets - 1) ? (payloadSize - currentChar) : BUFFER_LENGTH;
 				windowState[currentIndex] = currentFlag;
 				currentWindow[currentIndex] = new SenderThread(socket, serverId, clientId, &DestAddr, currentFlag, RESP, currentIndex, &completePayload[currentChar], currentSize);
 				currentWindow[currentIndex]->start();
@@ -90,8 +94,12 @@ namespace Common
 	void Sender::finalizePayload()
 	{
 		int index = (numberOfPackets + sequenceSeed) % SEQUENCE_RANGE;
+		int sizeInt = sizeof(payloadSize);
+		char* eofMessage = new char[4 + sizeInt];
+		strcpy(eofMessage, "EOF");
+		memcpy(eofMessage + 4, (char *)&payloadSize, sizeInt);
 		windowState[index] = new bool(false);
-		currentWindow[index] = new SenderThread(socket, serverId, clientId, &DestAddr, windowState[index], RESP_ERR, index, "EOF", 4);
+		currentWindow[index] = new SenderThread(socket, serverId, clientId, &DestAddr, windowState[index], RESP_ERR, index, eofMessage, 4 + sizeInt);
 		currentWindow[index]->start();
 	}
 

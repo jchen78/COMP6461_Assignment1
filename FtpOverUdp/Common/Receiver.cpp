@@ -33,8 +33,13 @@ namespace Common
 
 		// Handle EOF
 		if (isEofMsg(msg)) {
-			windowOrigin++;
-			isComplete = true;
+			int expectedSize;
+			memcpy(&expectedSize, msg->buffer + 4, sizeof(expectedSize));
+			if (expectedSize == totalPayloadSize) {
+				windowOrigin++;
+				isComplete = true;
+			}
+
 			return;
 		}
 
@@ -68,7 +73,7 @@ namespace Common
 		if (msg->type != RESP_ERR)
 			return false;
 
-		return (msg->sequenceNumber == (windowOrigin + sequenceSeed) % SEQUENCE_RANGE && strcmp(msg->buffer, "EOF") == 0);
+		return (strcmp(msg->buffer, "EOF") == 0);
 	}
 
 	void Receiver::sendAck(int sequenceNumber) {
