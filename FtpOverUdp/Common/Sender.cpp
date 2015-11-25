@@ -118,7 +118,7 @@ namespace Common
 		}
 	}
 
-	SenderThread::SenderThread(int sendingSocket, int serverId, int clientId, struct sockaddr_in* destinationAddress, bool* isAcked, Type messageType, int sequenceNumber, char *packetContents, int packetLength)
+	SenderThread::SenderThread(int sendingSocket, int serverId, int clientId, struct sockaddr_in* destinationAddress, bool* isAcked, Type messageType, int sequenceNumber, const char *packetContents, int packetLength)
 	{
 		socket = sendingSocket;
 		destination = destinationAddress;

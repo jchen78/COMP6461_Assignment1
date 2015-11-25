@@ -54,6 +54,7 @@ void ServerThread::run()
 			case PUT:
 				startRename();
 				break;
+			case RESP:
 			case RESP_ERR:
 				sendAck();
 				break;
@@ -79,18 +80,11 @@ void ServerThread::run()
 					sendAck();
 					break;
 				case RESP:
-					notifyFilenameCollision();
+					notifyFileError();
 					break;
 				}
-			} else if (currentMsg->sequenceNumber == (sequenceNumber + 1) % SEQUENCE_RANGE) {
-				if (currentMsg->type == RESP)
-					performRename();
-				else if (currentMsg->type == RESP_ERR) {
-					filename = "";
-					sequenceNumber = currentMsg->sequenceNumber;
-					currentState = WAITING_FOR_REQUEST;
-				}
-			}
+			} else if (currentMsg->sequenceNumber == (sequenceNumber + 1) % SEQUENCE_RANGE && currentMsg->type == RESP)
+				performRename();
 			
 			break;
 		}
@@ -248,7 +242,7 @@ void ServerThread::startRename() {
 
 	ioLock->waitForSignalling();
 
-	if (PathFileExists(filename.c_str()))
+	if (PathFileExists(filename.c_str()) != 1)
 		notifyFileError();
 	else {
 		sendAck();
@@ -265,10 +259,12 @@ void ServerThread::performRename() {
 
 	ioLock->waitForSignalling();
 
-	if (PathFileExists(newFilename.c_str()))
+	if (PathFileExists(newFilename.c_str()) == 1)
 		notifyFileError();
-	else
+	else {
+		sendAck();
 		rename(filename.c_str(), newFilename.c_str());
+	}
 
 	ioLock->finalizeSignalling();
 	ioLock->finalizeConsumption();
@@ -279,6 +275,7 @@ void ServerThread::notifyFileError() {
 	memset(&errorMessage, '\0', sizeof(errorMessage));
 	errorMessage.type = RESP_ERR;
 	errorMessage.length = 4;
+	errorMessage.sequenceNumber = sequenceNumber;
 
 	strcpy(errorMessage.buffer, "FAE");
 

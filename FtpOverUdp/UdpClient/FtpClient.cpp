@@ -146,6 +146,9 @@ void FtpClient::performGet()
 	Msg serverMsg;
 	while (!receiver->isPayloadComplete()) {
 		msgGet(&serverMsg);
+		if (serverMsg.serverId != serverIdentifier)
+			continue;
+
 		log(string("Received response with sequence number ").append(to_string((_ULonglong)serverMsg.sequenceNumber)));
 		switch (serverMsg.type) {
 		case RESP:
@@ -205,6 +208,9 @@ void FtpClient::performList()
 	Msg serverMsg;
 	while (!receiver->isPayloadComplete()) {
 		msgGet(&serverMsg);
+		if (serverMsg.serverId != serverIdentifier)
+			continue;
+
 		log(string("Received response with sequence number ").append(to_string((_ULonglong)serverMsg.sequenceNumber)));
 		switch (serverMsg.type) {
 		case RESP:
@@ -282,7 +288,7 @@ void FtpClient::performUpload()
 	Msg msg;
 	do {
 		msgGet(&msg);
-	} while (msg.type != ACK || msg.sequenceNumber != sequenceNumber);
+	} while (msg.type != ACK || msg.sequenceNumber != sequenceNumber || msg.serverId != serverIdentifier);
 	*isAcked = true;
 
 	sender->initializePayload(contents->data, contents->length, sequenceNumber, &msg);
@@ -291,12 +297,87 @@ void FtpClient::performUpload()
 	sender->send();
 	while (!sender->isPayloadSent()) {
 		msgGet(&msg);
+		if (msg.serverId != serverIdentifier)
+			continue;
+
 		log(string("Received response with sequence number: ").append(to_string((_ULonglong)msg.sequenceNumber)).append(". type: ").append(to_string((_ULonglong)msg.type)));
 		if (msg.type == ACK)
 			sender->processAck();
 	}
 
 	sequenceNumber = sender->finalSequenceNumber();
+}
+
+void FtpClient::performRename() {
+	bool* isFilenameAccepted = new bool(false);
+	Common::SenderThread* requestSender;
+	Msg serverResponse;
+	serverResponse.serverId = NULL_SERVER_ID;
+
+	while (!(*isFilenameAccepted)) {
+		string originalFilename;
+
+		cout << "Please enter the file to rename: ";
+		getline(cin, originalFilename);
+
+		requestSender = new Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isFilenameAccepted, PUT, sequenceNumber, originalFilename.c_str(), originalFilename.length());
+		requestSender->start();
+
+		while (serverResponse.serverId != serverIdentifier || serverResponse.sequenceNumber != sequenceNumber) {
+			msgGet(&serverResponse);
+		}
+
+		sequenceNumber++;
+		*isFilenameAccepted = true;
+		Sleep(TIMER_DELAY);
+		if (serverResponse.type == ACK)
+			break;
+		else if (serverResponse.type == RESP_ERR && strcmp(serverResponse.buffer, "FAE") == 0) {
+			int choice = -1;
+			isFilenameAccepted = new bool(false);
+			
+			cout << "No such file found in the server. Please enter 1 to enter a new filename, or 0 to return to the main menu." << endl;
+			cout << "Choice: ";
+			cin >> choice;
+			cin.ignore(250, '\n');
+
+			if (choice == 1)
+				continue;
+
+			return;
+		}
+	}
+
+	while (true) {
+		isFilenameAccepted = new bool(false);
+		string newFilename;
+		cout << "Please enter the new name of the file: ";
+		getline(cin, newFilename);
+
+		requestSender = new Common::SenderThread(clientSock, serverIdentifier, clientIdentifier, &ServAddr, isFilenameAccepted, RESP, sequenceNumber, newFilename.c_str(), newFilename.length());
+		requestSender->start();
+
+		while (serverResponse.serverId != serverIdentifier || serverResponse.sequenceNumber != sequenceNumber) {
+			msgGet(&serverResponse);
+		}
+
+		*isFilenameAccepted = true;
+		if (serverResponse.type == ACK) {
+			cout << "The file was successfully renamed." << endl;
+			return;
+		}
+
+		int choice = -1;
+		cout << "There already exists a filename with the specified new name. Please enter 1 to enter a new filename, or 0 to return to the main menu." << endl;
+		cout << "Choice: ";
+		cin >> choice;
+		cin.ignore(250, '\n');
+
+		if (choice != 1)
+			return;
+
+		sequenceNumber++;
+	}
 }
 
 void FtpClient::terminate()
@@ -390,6 +471,7 @@ void FtpClient::showMenu()
 	cout << "1 : GET " << endl;
 	cout << "2 : LIST " << endl;
 	cout << "3 : UPLOAD " << endl;
+	cout << "4 : RENAME " << endl;
 	cout << "Please select the operation that you want to perform : ";
 	
 	/* Check if invalid value is provided and reset if cin error flag is set */
@@ -418,6 +500,10 @@ void FtpClient::showMenu()
 
 		case 3:
 			performUpload();
+			break;
+		
+		case 4:
+			performRename();
 			break;
 
 		case 5:
